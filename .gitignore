@@ -1,6 +1,31 @@
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Python cache and generated files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# IDE settings
 .idea/
-__pycache__/    
-logs/
-.env
 .vscode/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Logs and local databases
+logs/
+*.log
+database/*.db
+database/*.sqlite
+database/*.sqlite3
+
+# Operating system files
+.DS_Store
+Thumbs.db
