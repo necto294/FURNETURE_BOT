@@ -1,6 +1,5 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-
 # Для каждой категории указываем нужный дополнительный фильтр.
 CATEGORY_CONFIG = {
     "sleep": ("Спальная мебель", "country"),
@@ -131,6 +130,7 @@ def products_menu(
 
 
 def product_menu(
+    product_id: int,
     category_key: str,
     filter_type: str | None,
     filter_value: str | None,
@@ -146,5 +146,61 @@ def product_menu(
             )
         ]
     ]
+    # Кнопка заявки несёт id товара, чтобы FSM знал, что оформляем.
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="📩 Отправить заявку",
+                callback_data=f"order:{product_id}",
+            )
+        ]
+    )
     rows.append([InlineKeyboardButton(text="🏠 В главное меню", callback_data="back:main")])
     return _keyboard(rows)
+
+
+def cancel_order_menu() -> InlineKeyboardMarkup:
+    """Показать кнопку отмены во время ввода имени или телефона."""
+    # Один и тот же callback гасит FSM в любом состоянии заявки.
+    return _keyboard(
+        [
+            [
+                InlineKeyboardButton(
+                    text="❌ Отменить заявку",
+                    callback_data="order:cancel",
+                )
+            ]
+        ]
+    )
+
+
+def order_confirmation_menu() -> InlineKeyboardMarkup:
+    """Подтвердить или отменить оформленную заявку."""
+    return _keyboard(
+        [
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить",
+                    callback_data="order:confirm",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Отменить",
+                    callback_data="order:cancel",
+                ),
+            ]
+        ]
+    )
+
+
+def back_to_main_menu() -> InlineKeyboardMarkup:
+    """Одна кнопка для возврата в главное меню после завершения заявки."""
+    return _keyboard(
+        [
+            [
+                InlineKeyboardButton(
+                    text="🏠 В главное меню",
+                    callback_data="back:main",
+                )
+            ]
+        ]
+    )

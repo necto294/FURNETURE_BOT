@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from .engine import AsyncSessionLocal
-from .models import Category, Furniture, User
+from .models import Category, Furniture, Order, User
 
 
 # Эти варианты должны быть доступны до появления соответствующих товаров.
@@ -157,3 +157,56 @@ async def get_furniture_by_id(furniture_id: int) -> Furniture | None:
     async with AsyncSessionLocal() as session:
         result = await session.execute(query)
         return result.scalar_one_or_none()
+
+
+async def create_order(
+    user_id: str,
+    furniture_id: int,
+    status: str = "new",
+) -> Order:
+    """Создать новую заявку на покупку товара."""
+    from .models import Order
+    async with AsyncSessionLocal() as session:
+        order = Order(
+            user_id=user_id,
+            furniture_id=furniture_id,
+            status=status,
+        )
+        session.add(order)
+        await session.commit()
+        await session.refresh(order)
+        return order
+
+
+async def get_order_by_id(order_id: int) -> Order | None:
+    """Найти заявку по идентификатору."""
+    from .models import Order
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Order).where(Order.id == order_id))
+        return result.scalar_one_or_none()
+
+
+async def get_user_orders(
+    user_id: str,
+    status: str | None = None,
+) -> list[Order]:
+    """Вернуть список заявок пользователя, опционально отфильтрованных по статусу."""
+    from .models import Order
+    async with AsyncSessionLocal() as session:
+        query = select(Order).where(Order.user_id == user_id)
+        if status is not None:
+            query = query.where(Order.status == status)
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
+async def update_order_status(order_id: int, new_status: str) -> Order | None:
+    """Обновить статус заявки."""
+    from .models import Order
+    async with AsyncSessionLocal() as session:
+        order = await session.get(Order, order_id)
+        if order is not None:
+            order.status = new_status
+            await session.commit()
+            await session.refresh(order)
+        return order

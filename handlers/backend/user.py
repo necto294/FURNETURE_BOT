@@ -12,16 +12,16 @@ from database.crud import (
     get_furniture_page,
     upsert_user,
 )
-from settings.config import ConfigBot
 from keyboard.user_keyboards import (
-    CATEGORY_ICONS,
     CATEGORY_CONFIG,
+    CATEGORY_ICONS,
     empty_catalog_menu,
-    main_menu,
     filter_menu,
+    main_menu,
     product_menu,
     products_menu,
 )
+from settings.config import ConfigBot
 
 router = Router(name="user_catalog")
 
@@ -253,10 +253,15 @@ async def product_handler(callback: CallbackQuery) -> None:
         ]
         await callback.message.answer_media_group(media)
 
+    # Кнопка заявки в карточке получает id товара и контекст возврата.
     await callback.message.answer(
         details,
         reply_markup=product_menu(
-            category_key, filter_type or None, filter_value or None, int(page)
+            product.id,
+            category_key,
+            filter_type or None,
+            filter_value or None,
+            int(page),
         ),
     )
     await callback.answer()

@@ -63,3 +63,17 @@ class FurniturePhoto(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     furniture = relationship("Furniture", back_populates="photos")
+
+
+# Заявка на покупку товара.
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    furniture_id = Column(Integer, ForeignKey("furniture.id"), nullable=False)
+    status = Column(String, default="new", nullable=False)  # new, processing, completed, cancelled
+    created_at = Column(DateTime, default=datetime.now)
+
+    user = relationship("User")
+    furniture = relationship("Furniture")

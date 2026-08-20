@@ -17,3 +17,10 @@ class NewFurnitureStates(StatesGroup):
 # Класс для состояний при УДАЛЕНИИ МЕБЕЛИ
 class RemoveFurnitureStates(StatesGroup):
     select_furniture = State()
+
+
+# Класс для состояний при ОФОРМЛЕНИИ ЗАЯВКИ
+class OrderStates(StatesGroup):
+    name = State()
+    phone = State()
+    confirm = State()
