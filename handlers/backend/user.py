@@ -15,6 +15,7 @@ from settings.config import ConfigBot
 from keyboard.user_keyboards import (
     CATEGORY_ICONS,
     CATEGORY_CONFIG,
+    empty_catalog_menu,
     main_menu,
     filter_menu,
     product_menu,
@@ -91,8 +92,23 @@ async def show_products(
         )
         keyboard = products_menu(products, category_key, filter_type, filter_value, page, total)
     else:
-        text = f"В категории «{category_name}» пока нет товаров."
-        keyboard = main_menu(await get_categories())
+        # Пустой результат оформляем как отдельное состояние каталога.
+        category_icon = CATEGORY_ICONS.get(category_key, "🪑")
+        if filter_value:
+            text = (
+                f"<b>{category_icon} {escape(category_name)}</b>\n"
+                f"{HTML_SEPARATOR}\n\n"
+                f"<i>По фильтру «{escape(str(filter_value))}» товаров пока нет.</i>\n\n"
+                "Попробуйте выбрать другой вариант или вернитесь в каталог."
+            )
+        else:
+            text = (
+                f"<b>{category_icon} {escape(category_name)}</b>\n"
+                f"{HTML_SEPARATOR}\n\n"
+                "<i>В этой категории пока нет доступных товаров.</i>\n\n"
+                "Новые модели появятся здесь после добавления в каталог."
+            )
+        keyboard = empty_catalog_menu()
 
     await callback.message.edit_text(text, reply_markup=keyboard)
 
@@ -124,17 +140,23 @@ async def category_handler(callback: CallbackQuery) -> None:
     if filter_type == "country":
         # Страны показываются только если они есть у товаров этой категории.
         values = await get_filter_values(category_name, filter_type)
-        await callback.message.edit_text(
-            f"{category_name}\n\nВыберите страну производства из каталога:",
-            reply_markup=filter_menu(category_key, filter_type, values),
-        )
+        if values:
+            await callback.message.edit_text(
+                f"{category_name}\n\nВыберите страну производства из каталога:",
+                reply_markup=filter_menu(category_key, filter_type, values),
+            )
+        else:
+            await show_products(callback, category_key)
     elif filter_type == "subcategory":
         # Подкатегории также формируются из фактических записей каталога.
         values = await get_filter_values(category_name, filter_type)
-        await callback.message.edit_text(
-            f"{category_name}\n\nВыберите тип кухни из каталога:",
-            reply_markup=filter_menu(category_key, filter_type, values),
-        )
+        if values:
+            await callback.message.edit_text(
+                f"{category_name}\n\nВыберите тип кухни из каталога:",
+                reply_markup=filter_menu(category_key, filter_type, values),
+            )
+        else:
+            await show_products(callback, category_key)
     else:
         await show_products(callback, category_key)
 
@@ -146,9 +168,10 @@ async def filter_handler(callback: CallbackQuery) -> None:
     if callback.data is None:
         return
 
+    # Сразу закрываем индикатор Telegram перед запросом к базе.
+    await callback.answer()
     _, category_key, filter_type, filter_value = callback.data.split(":", 3)
     await show_products(callback, category_key, filter_type, filter_value)
-    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("page:"))
@@ -156,6 +179,7 @@ async def page_handler(callback: CallbackQuery) -> None:
     if callback.data is None:
         return
 
+    await callback.answer()
     _, category_key, page, filter_type, filter_value = callback.data.split(":", 4)
     await show_products(
         callback,
@@ -164,7 +188,6 @@ async def page_handler(callback: CallbackQuery) -> None:
         filter_value or None,
         int(page),
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "noop")

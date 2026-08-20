@@ -5,6 +5,11 @@ from .engine import AsyncSessionLocal
 from .models import Category, Furniture
 
 
+# Эти варианты должны быть доступны до появления соответствующих товаров.
+REQUIRED_COUNTRIES = ("Россия", "Турция")
+REQUIRED_KITCHEN_TYPES = ("Прямая", "Угловая")
+
+
 async def get_categories() -> list[Category]:
     """Вернуть категории каталога в порядке их добавления."""
     async with AsyncSessionLocal() as session:
@@ -91,7 +96,18 @@ async def get_filter_values(category_name: str, filter_type: str) -> list[str]:
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(query)
-        return [str(value) for value in result.scalars().all()]
+        values = [str(value) for value in result.scalars().all()]
+
+    if filter_type == "country":
+        values.extend(country for country in REQUIRED_COUNTRIES if country not in values)
+    elif filter_type == "subcategory" and category_name == "Кухонная мебель":
+        values.extend(
+            kitchen_type
+            for kitchen_type in REQUIRED_KITCHEN_TYPES
+            if kitchen_type not in values
+        )
+
+    return sorted(values)
 
 
 async def get_furniture_by_id(furniture_id: int) -> Furniture | None:

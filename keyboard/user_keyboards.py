@@ -51,22 +51,16 @@ def main_menu(categories: list) -> InlineKeyboardMarkup:
     return _keyboard(rows)
 
 
-def country_menu(category_key: str) -> InlineKeyboardMarkup:
+def empty_catalog_menu() -> InlineKeyboardMarkup:
+    """Показать кнопку возврата к каталогу после пустого результата."""
     return _keyboard(
         [
-            [InlineKeyboardButton(text="🇷🇺 Россия", callback_data=f"filter:{category_key}:country:Россия")],
-            [InlineKeyboardButton(text="🇹🇷 Турция", callback_data=f"filter:{category_key}:country:Турция")],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")],
-        ]
-    )
-
-
-def kitchen_menu() -> InlineKeyboardMarkup:
-    return _keyboard(
-        [
-            [InlineKeyboardButton(text="📏 Прямая кухня", callback_data="filter:kitchen:subcategory:Прямая")],
-            [InlineKeyboardButton(text="📐 Угловая кухня", callback_data="filter:kitchen:subcategory:Угловая")],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")],
+            [
+                InlineKeyboardButton(
+                    text="🏠 Вернуться в каталог",
+                    callback_data="back:main",
+                )
+            ]
         ]
     )
 

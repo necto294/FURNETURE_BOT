@@ -17,6 +17,7 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Начальные категории совпадают с текущим пользовательским каталогом.
 CATEGORY_ROWS = (
     ("Спальная мебель", "Мебель для спальни"),
     ("Кухонная мебель", "Кухонные гарнитуры и мебель"),
