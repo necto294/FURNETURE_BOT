@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from alembic import context
 
 from database.engine import Base  # Импортируем базовый класс моделей SQLAlchemy
+from database import models  # noqa: F401 - регистрируем модели в metadata
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

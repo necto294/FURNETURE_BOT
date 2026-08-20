@@ -38,9 +38,12 @@ class Furniture(Base):
     __tablename__ = "furniture"
 
     id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
     description = Column(String)
     category_name = Column(String, ForeignKey("categories.name"), nullable=False)
     category_id = Column(Integer, nullable=False)
+    country = Column(String)
+    subcategory = Column(String)
     created_at = Column(DateTime, default=datetime.now)
 
     photos = relationship("FurniturePhoto", back_populates="furniture", cascade="all, delete-orphan")
