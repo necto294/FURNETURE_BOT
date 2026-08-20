@@ -2,7 +2,20 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from .engine import AsyncSessionLocal
-from .models import Furniture
+from .models import Category, Furniture
+
+
+async def get_categories() -> list[Category]:
+    """Вернуть категории каталога в порядке их добавления."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Category).order_by(Category.id))
+        return list(result.scalars().all())
+
+
+async def get_category_by_id(category_id: int) -> Category | None:
+    """Найти категорию по идентификатору из callback-кнопки."""
+    async with AsyncSessionLocal() as session:
+        return await session.get(Category, category_id)
 
 
 async def get_furniture_list(
@@ -59,6 +72,26 @@ async def get_furniture_page(
         total = await session.scalar(count_query) or 0
         result = await session.execute(items_query)
         return list(result.scalars().all()), total
+
+
+async def get_filter_values(category_name: str, filter_type: str) -> list[str]:
+    """Вернуть уникальные значения фильтра, сохранённые у товаров категории."""
+    # Выбираем колонку фильтра динамически, но только из разрешённых полей модели.
+    column = (
+        Furniture.country
+        if filter_type == "country"
+        else Furniture.subcategory
+    )
+    query = (
+        select(column)
+        .where(Furniture.category_name == category_name, column.is_not(None))
+        .distinct()
+        .order_by(column)
+    )
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        return [str(value) for value in result.scalars().all()]
 
 
 async def get_furniture_by_id(furniture_id: int) -> Furniture | None:

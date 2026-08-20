@@ -1,19 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-# Ключи категорий используются в callback_data и связывают меню с обработчиками.
-CATEGORY_BUTTONS = (
-    ("🛏️ Спальная мебель", "category:sleep"),
-    ("🍳 Кухонная мебель", "category:kitchen"),
-    ("🛋️ Мягкая мебель", "category:soft"),
-    ("📚 Столы и стулья", "category:tables"),
-    ("📺 Тумбы и комоды", "category:cabinets"),
-    ("🛏️ Матрасы", "category:mattresses"),
-    ("🛏️ Кровати", "category:beds"),
-    ("📦 Шкафы", "category:wardrobes"),
-)
-
-
 # Для каждой категории указываем нужный дополнительный фильтр.
 CATEGORY_CONFIG = {
     "sleep": ("Спальная мебель", "country"),
@@ -43,8 +30,25 @@ def _keyboard(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def main_menu() -> InlineKeyboardMarkup:
-    return _keyboard([[InlineKeyboardButton(text=text, callback_data=data)] for text, data in CATEGORY_BUTTONS])
+def main_menu(categories: list) -> InlineKeyboardMarkup:
+    """Построить главное меню из категорий, загруженных из базы."""
+    rows = []
+    for category in categories:
+        category_name = str(category.name)
+        category_key = next(
+            (key for key, (name, _) in CATEGORY_CONFIG.items() if name == category_name),
+            category_name,
+        )
+        icon = CATEGORY_ICONS.get(category_key, "🪑")
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{icon} {category_name}",
+                    callback_data=f"category:{category.id}",
+                )
+            ]
+        )
+    return _keyboard(rows)
 
 
 def country_menu(category_key: str) -> InlineKeyboardMarkup:
@@ -65,6 +69,28 @@ def kitchen_menu() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")],
         ]
     )
+
+
+def filter_menu(
+    category_key: str,
+    filter_type: str,
+    values: list[str],
+) -> InlineKeyboardMarkup:
+    """Построить подкатегории из значений, полученных из базы данных."""
+    # Каждое значение из базы превращается в отдельную кнопку фильтра.
+    rows = []
+    for value in values:
+        icon = "🇷🇺" if value == "Россия" else "🇹🇷" if value == "Турция" else "📐"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{icon} {value}",
+                    callback_data=f"filter:{category_key}:{filter_type}:{value}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")])
+    return _keyboard(rows)
 
 
 def products_menu(

@@ -4,14 +4,19 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InputMediaPhoto, MediaUnion, Message
 
-from database.crud import get_furniture_by_id, get_furniture_page
+from database.crud import (
+    get_categories,
+    get_category_by_id,
+    get_filter_values,
+    get_furniture_by_id,
+    get_furniture_page,
+)
 from settings.config import ConfigBot
 from keyboard.user_keyboards import (
     CATEGORY_ICONS,
     CATEGORY_CONFIG,
-    country_menu,
-    kitchen_menu,
     main_menu,
+    filter_menu,
     product_menu,
     products_menu,
 )
@@ -69,7 +74,7 @@ async def show_products(
     if not isinstance(callback.message, Message):
         return
 
-    category_name, _ = CATEGORY_CONFIG[category_key]
+    category_name, _ = CATEGORY_CONFIG.get(category_key, (category_key, None))
     products, total = await get_furniture_page(
         category_name=category_name,
         page=page,
@@ -87,14 +92,14 @@ async def show_products(
         keyboard = products_menu(products, category_key, filter_type, filter_value, page, total)
     else:
         text = f"В категории «{category_name}» пока нет товаров."
-        keyboard = main_menu()
+        keyboard = main_menu(await get_categories())
 
     await callback.message.edit_text(text, reply_markup=keyboard)
 
 
 @router.message(CommandStart())
 async def start_handler(message: Message) -> None:
-    await message.answer(START_TEXT, reply_markup=main_menu())
+    await message.answer(START_TEXT, reply_markup=main_menu(await get_categories()))
 
 
 @router.callback_query(F.data.startswith("category:"))
@@ -103,18 +108,32 @@ async def category_handler(callback: CallbackQuery) -> None:
     if not isinstance(callback.message, Message) or callback.data is None:
         return
 
-    category_key = callback.data.split(":", 1)[1]
-    category_name, filter_type = CATEGORY_CONFIG[category_key]
+    category_id = int(callback.data.split(":", 1)[1])
+    category = await get_category_by_id(category_id)
+    if category is None:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+
+    category_name = str(category.name)
+    category_key = next(
+        (key for key, (name, _) in CATEGORY_CONFIG.items() if name == category_name),
+        category_name,
+    )
+    _, filter_type = CATEGORY_CONFIG.get(category_key, (category_name, None))
 
     if filter_type == "country":
+        # Страны показываются только если они есть у товаров этой категории.
+        values = await get_filter_values(category_name, filter_type)
         await callback.message.edit_text(
-            f"{category_name}\n\nВыберите страну производства:",
-            reply_markup=country_menu(category_key),
+            f"{category_name}\n\nВыберите страну производства из каталога:",
+            reply_markup=filter_menu(category_key, filter_type, values),
         )
     elif filter_type == "subcategory":
+        # Подкатегории также формируются из фактических записей каталога.
+        values = await get_filter_values(category_name, filter_type)
         await callback.message.edit_text(
-            f"{category_name}\n\nВыберите тип кухни:",
-            reply_markup=kitchen_menu(),
+            f"{category_name}\n\nВыберите тип кухни из каталога:",
+            reply_markup=filter_menu(category_key, filter_type, values),
         )
     else:
         await show_products(callback, category_key)
@@ -166,8 +185,8 @@ async def product_handler(callback: CallbackQuery) -> None:
         await callback.answer("Товар не найден", show_alert=True)
         return
 
-    category_name, _ = CATEGORY_CONFIG[category_key]
-    category_icon = CATEGORY_ICONS[category_key]
+    category_name, _ = CATEGORY_CONFIG.get(category_key, (category_key, None))
+    category_icon = CATEGORY_ICONS.get(category_key, "🪑")
     description = escape(
         str(product.description)
         if product.description is not None
@@ -216,7 +235,9 @@ async def back_to_main_handler(callback: CallbackQuery) -> None:
     if not isinstance(callback.message, Message):
         return
 
-    await callback.message.edit_text(START_TEXT, reply_markup=main_menu())
+    await callback.message.edit_text(
+        START_TEXT, reply_markup=main_menu(await get_categories())
+    )
     await callback.answer()
 
 
@@ -226,13 +247,15 @@ async def back_to_category_handler(callback: CallbackQuery) -> None:
         return
 
     category_key = callback.data.split(":", 2)[2]
-    category_name, filter_type = CATEGORY_CONFIG[category_key]
+    category_name, filter_type = CATEGORY_CONFIG.get(category_key, (category_key, None))
 
     if filter_type == "country":
-        keyboard = country_menu(category_key)
+        values = await get_filter_values(category_name, filter_type)
+        keyboard = filter_menu(category_key, filter_type, values)
         text = f"{category_name}\n\nОтлично! Теперь выберите страну производства:"
     elif filter_type == "subcategory":
-        keyboard = kitchen_menu()
+        values = await get_filter_values(category_name, filter_type)
+        keyboard = filter_menu(category_key, filter_type, values)
         text = f"{category_name}\n\nХорошо, теперь выберите тип кухни:"
     else:
         await show_products(callback, category_key)
