@@ -11,6 +11,7 @@ async def get_furniture_list(
     subcategory: str | None = None,
 ) -> list[Furniture]:
     """Вернуть товары категории с необязательной фильтрацией."""
+    # Фотографии загружаются сразу, чтобы карточку можно было показать одной операцией.
     query = (
         select(Furniture)
         .options(selectinload(Furniture.photos))
@@ -18,6 +19,7 @@ async def get_furniture_list(
         .order_by(Furniture.id)
     )
 
+    # Фильтры добавляются только для выбранного пользователем режима.
     if country is not None:
         query = query.where(Furniture.country == country)
     if subcategory is not None:

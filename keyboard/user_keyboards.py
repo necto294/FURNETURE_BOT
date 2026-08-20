@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
+# Ключи категорий используются в callback_data и связывают меню с обработчиками.
 CATEGORY_BUTTONS = (
     ("🛏️ Спальная мебель", "category:sleep"),
     ("🍳 Кухонная мебель", "category:kitchen"),
@@ -13,6 +14,7 @@ CATEGORY_BUTTONS = (
 )
 
 
+# Для каждой категории указываем нужный дополнительный фильтр.
 CATEGORY_CONFIG = {
     "sleep": ("Спальная мебель", "country"),
     "kitchen": ("Кухонная мебель", "subcategory"),
@@ -22,6 +24,18 @@ CATEGORY_CONFIG = {
     "mattresses": ("Матрасы", None),
     "beds": ("Кровати", None),
     "wardrobes": ("Шкафы", None),
+}
+
+# Эмодзи используются в заголовке карточки товара.
+CATEGORY_ICONS = {
+    "sleep": "🛏️",
+    "kitchen": "🍳",
+    "soft": "🛋️",
+    "tables": "📚",
+    "cabinets": "📺",
+    "mattresses": "🛏️",
+    "beds": "🛏️",
+    "wardrobes": "📦",
 }
 
 
@@ -59,6 +73,7 @@ def products_menu(
     filter_type: str | None = None,
     filter_value: str | None = None,
 ) -> InlineKeyboardMarkup:
+    # Контекст фильтра сохраняется в кнопке, чтобы вернуть пользователя к списку.
     rows = [
         [
             InlineKeyboardButton(
