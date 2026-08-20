@@ -20,7 +20,7 @@ router = Router(name="user_catalog")
 
 # Контакты и ссылка на соцсеть используются во всех карточках товаров.
 INSTAGRAM_URL = "https://instagram.com/movsarcoder"
-HTML_SEPARATOR = "<b>━━━━━━━━━━━━━━━━</b>"
+HTML_SEPARATOR = "<b>──────────────</b>"
 
 
 def format_date(value) -> str:
@@ -169,7 +169,7 @@ async def product_handler(callback: CallbackQuery) -> None:
         f"📱 Telegram: {escape(ConfigBot.TELEGRAM)}\n\n"
         "<b>✨ Подписывайтесь на нас в Instagram</b> и будьте в курсе "
         "новинок и акций:\n"
-        f"📸 <a href=\"{INSTAGRAM_URL}\">Instagram</a>"
+        f"📸 <b>Instagram:</b> <a href=\"{INSTAGRAM_URL}\">{INSTAGRAM_URL}</a>"
     )
 
     # Telegram принимает фотографии группой, поэтому отправляем их одним альбомом.
