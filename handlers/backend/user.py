@@ -10,6 +10,7 @@ from database.crud import (
     get_filter_values,
     get_furniture_by_id,
     get_furniture_page,
+    upsert_user,
 )
 from settings.config import ConfigBot
 from keyboard.user_keyboards import (
@@ -115,6 +116,14 @@ async def show_products(
 
 @router.message(CommandStart())
 async def start_handler(message: Message) -> None:
+    # Сохраняем посетителя для админки; флаг is_admin при этом не трогаем.
+    if message.from_user is not None:
+        await upsert_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
     await message.answer(START_TEXT, reply_markup=main_menu(await get_categories()))
 
 

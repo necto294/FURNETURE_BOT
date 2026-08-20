@@ -33,7 +33,10 @@ class Category(Base):
         return f"<Category(id={self.id}, name='{self.name}')>"
 
 
-# Основная информация о товаре и его фотографии.
+# Контракт каталога для админ-панели: пользовательская часть читает эти поля как есть.
+# category_name — точное имя из categories.name (например «Кухонная мебель»).
+# country — «Россия» или «Турция»; subcategory для кухни — «Прямая» или «Угловая».
+# В Telegram уходит FurniturePhoto.file_id, полученный при загрузке фото.
 class Furniture(Base):
     __tablename__ = "furniture"
 
