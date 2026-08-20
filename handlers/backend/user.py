@@ -4,7 +4,7 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InputMediaPhoto, MediaUnion, Message
 
-from database.crud import get_furniture_by_id, get_furniture_list
+from database.crud import get_furniture_by_id, get_furniture_page
 from settings.config import ConfigBot
 from keyboard.user_keyboards import (
     CATEGORY_ICONS,
@@ -63,14 +63,16 @@ async def show_products(
     category_key: str,
     filter_type: str | None = None,
     filter_value: str | None = None,
+    page: int = 0,
 ) -> None:
     # Один обработчик обслуживает и обычные категории, и категории с фильтрами.
     if not isinstance(callback.message, Message):
         return
 
     category_name, _ = CATEGORY_CONFIG[category_key]
-    products = await get_furniture_list(
+    products, total = await get_furniture_page(
         category_name=category_name,
+        page=page,
         country=filter_value if filter_type == "country" else None,
         subcategory=filter_value if filter_type == "subcategory" else None,
     )
@@ -79,10 +81,10 @@ async def show_products(
         # Показываем число найденных товаров перед списком кнопок.
         text = (
             f"<b>{category_name}</b>\n\n"
-            f"Показано {len(products)} из {len(products)} товаров в категории.\n\n"
+            f"Показано {len(products)} из {total} товаров в категории.\n\n"
             "Выберите товар:"
         )
-        keyboard = products_menu(products, category_key, filter_type, filter_value)
+        keyboard = products_menu(products, category_key, filter_type, filter_value, page, total)
     else:
         text = f"В категории «{category_name}» пока нет товаров."
         keyboard = main_menu()
@@ -130,13 +132,34 @@ async def filter_handler(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("page:"))
+async def page_handler(callback: CallbackQuery) -> None:
+    if callback.data is None:
+        return
+
+    _, category_key, page, filter_type, filter_value = callback.data.split(":", 4)
+    await show_products(
+        callback,
+        category_key,
+        filter_type or None,
+        filter_value or None,
+        int(page),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "noop")
+async def noop_handler(callback: CallbackQuery) -> None:
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("product:"))
 async def product_handler(callback: CallbackQuery) -> None:
     # Из callback_data восстанавливаем путь пользователя для кнопки возврата.
     if not isinstance(callback.message, Message) or callback.data is None:
         return
 
-    _, product_id, category_key, filter_type, filter_value = callback.data.split(":", 4)
+    _, product_id, category_key, filter_type, filter_value, page = callback.data.split(":", 5)
     product = await get_furniture_by_id(int(product_id))
 
     if product is None:
@@ -181,7 +204,9 @@ async def product_handler(callback: CallbackQuery) -> None:
 
     await callback.message.answer(
         details,
-        reply_markup=product_menu(category_key, filter_type or None, filter_value or None),
+        reply_markup=product_menu(
+            category_key, filter_type or None, filter_value or None, int(page)
+        ),
     )
     await callback.answer()
 
