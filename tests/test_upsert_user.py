@@ -83,7 +83,7 @@ class UpsertUserTests(unittest.IsolatedAsyncioTestCase):
 class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_registers_telegram_user(self) -> None:
         os.environ.setdefault("BOT_TOKEN", "test-token")
-        from handlers.backend.user import start_handler
+        from handlers.backend.user.router import start_handler
 
         message = SimpleNamespace(
             from_user=SimpleNamespace(
@@ -97,12 +97,12 @@ class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "handlers.backend.user.upsert_user", new_callable=AsyncMock
+                "handlers.backend.user.router.upsert_user", new_callable=AsyncMock
             ) as upsert,
             patch(
-                "handlers.backend.user.get_categories", new_callable=AsyncMock
+                "handlers.backend.user.router.get_categories", new_callable=AsyncMock
             ) as categories,
-            patch("handlers.backend.user.main_menu", return_value="menu"),
+            patch("handlers.backend.user.router.main_menu", return_value="menu"),
         ):
             categories.return_value = []
             await start_handler(message)
