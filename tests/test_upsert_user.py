@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 import tempfile
@@ -11,16 +10,18 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from database.engine import Base  # noqa: E402
-from database.models import User  # noqa: E402
-import database.crud as crud  # noqa: E402
+from database import crud
+from database.engine import Base
+from database.models import User
 
 
 class UpsertUserTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
-        self._tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        self._tmp.close()
-        self.engine = create_async_engine(f"sqlite+aiosqlite:///{self._tmp.name}")
+        # mkstemp не открывает файловый объект, поэтому контекст-менеджер не нужен.
+        descriptor, path = tempfile.mkstemp(suffix=".db")
+        os.close(descriptor)
+        self._tmp_path = path
+        self.engine = create_async_engine(f"sqlite+aiosqlite:///{self._tmp_path}")
         async with self.engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
         self.session_factory = async_sessionmaker(
@@ -32,7 +33,7 @@ class UpsertUserTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self) -> None:
         crud.AsyncSessionLocal = self._original_session
         await self.engine.dispose()
-        os.unlink(self._tmp.name)
+        os.unlink(self._tmp_path)
 
     async def test_creates_user_without_admin_flag(self) -> None:
         user = await crud.upsert_user(

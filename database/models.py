@@ -1,8 +1,8 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
-
-from uuid import uuid4
 from datetime import datetime
+from uuid import uuid4
+
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import relationship
 
 from .engine import Base
 
@@ -47,6 +47,9 @@ class Furniture(Base):
     category_id = Column(Integer, nullable=False)
     country = Column(String)
     subcategory = Column(String)
+    # Контакты задаёт администратор при добавлении товара.
+    whatsapp_contact = Column(String)
+    telegram_contact = Column(String)
     created_at = Column(DateTime, default=datetime.now)
 
     photos = relationship("FurniturePhoto", back_populates="furniture", cascade="all, delete-orphan")
@@ -72,6 +75,9 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     furniture_id = Column(Integer, ForeignKey("furniture.id"), nullable=False)
+    # Имя и телефон из формы заявки; нужны админу в разделе «Заявки».
+    customer_name = Column(String)
+    customer_phone = Column(String)
     status = Column(String, default="new", nullable=False)  # new, processing, completed, cancelled
     created_at = Column(DateTime, default=datetime.now)
 

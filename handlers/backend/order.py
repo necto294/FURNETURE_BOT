@@ -1,21 +1,42 @@
 from html import escape
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import default_state
 from aiogram.types import CallbackQuery, Message
 
-from database.crud import create_order, get_categories, get_furniture_by_id, upsert_user
+from database.crud import (
+    create_order,
+    get_admin_ids,
+    get_categories,
+    get_furniture_by_id,
+    upsert_user,
+)
 from keyboard.user_keyboards import (
     back_to_main_menu,
     cancel_order_menu,
     main_menu,
     order_confirmation_menu,
 )
+from settings.config import ConfigBot
 from states.states import OrderStates
 
 router = Router(name="user_order")
+
+
+async def notify_admins(bot, text: str) -> None:
+    """Разослать заявку админам из .env и всем с is_admin в базе."""
+    recipients = list(ConfigBot.ADMIN_IDS)
+    recipients.extend(aid for aid in await get_admin_ids() if aid not in recipients)
+    for admin_id in recipients:
+        try:
+            await bot.send_message(admin_id, text)
+        except TelegramForbiddenError:
+            # Админ мог не запустить бота: не мешаем оформление заявки.
+            continue
+
 
 # Регистрация заявки из карточки товара: id товара берётся из callback-кнопки.
 @router.callback_query(F.data.regexp(r"^order:\d+$"), StateFilter(default_state))
@@ -112,7 +133,29 @@ async def order_confirm_handler(callback: CallbackQuery, state: FSMContext) -> N
         first_name=callback.from_user.first_name,
         last_name=callback.from_user.last_name,
     )
-    await create_order(user_id=user.id, furniture_id=int(data["product_id"]))
+    order = await create_order(
+        user_id=user.id,
+        furniture_id=int(data["product_id"]),
+        # Сохраняем данные формы, чтобы админ видел их в разделе «Заявки».
+        customer_name=data["name"],
+        customer_phone=data["phone"],
+    )
+
+    # Уведомляем администраторов о новой заявке в личные сообщения.
+    bot = getattr(callback.message, "bot", None)
+    if bot is not None:
+        customer = escape(data["name"])
+        phone = escape(data["phone"])
+        username = f"@{callback.from_user.username}" if callback.from_user.username else "нет"
+        await notify_admins(
+            bot,
+            "<b>🛎 Новая заявка</b>\n\n"
+            f"🧾 Номер: <b>№{order.id}</b>\n"
+            f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>\n"
+            f"👤 Имя: {customer}\n"
+            f"📱 Телефон: {phone}\n"
+            f"💬 Telegram: {username}",
+        )
 
     await state.clear()
     await callback.message.edit_text(

@@ -1,11 +1,13 @@
-from typing import List, Tuple
-from aiogram.types import (ReplyKeyboardMarkup,
-                        KeyboardButton,
-                        InlineKeyboardMarkup,
-                        InlineKeyboardButton)
+
+from aiogram.types import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+)
 
 
-def make_row_keyboards(items: List[str]) -> ReplyKeyboardMarkup:
+def make_row_keyboards(items: list[str]) -> ReplyKeyboardMarkup:
     """
     Create a list of rows of KeyboardButtons from a list of strings.
 
@@ -18,7 +20,7 @@ def make_row_keyboards(items: List[str]) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def make_inline_row_keyboards(items: List[Tuple[str, str]]) -> InlineKeyboardMarkup:
+def make_inline_row_keyboards(items: list[tuple[str, str]]) -> InlineKeyboardMarkup:
     """
     Create a list of rows of InlineKeyboardButtons from a list of tuples.
 

@@ -2,7 +2,6 @@ from html import escape
 
 from database.models import Furniture
 from keyboard.user_keyboards import CATEGORY_CONFIG, CATEGORY_ICONS
-from settings.config import ConfigBot
 
 from .texts import HTML_SEPARATOR, INSTAGRAM_URL
 
@@ -37,12 +36,14 @@ def build_product_card(product: Furniture, category_key: str) -> str:
         details += f"📐 Тип мебели: {escape(str(product.subcategory))}\n"
     if product.country is not None:
         details += f"🌍 Страна производства: {country_label(str(product.country))}\n"
-    # Контакты берутся из настроек, чтобы администратор мог менять их без кода.
+    # Контакты задаёт администратор при добавлении товара.
+    whatsapp = escape(str(product.whatsapp_contact)) if product.whatsapp_contact else "не указан"
+    telegram = escape(str(product.telegram_contact)) if product.telegram_contact else "не указан"
     details += (
         f"📆 Дата добавления: {format_date(product.created_at)}\n"
         f"{HTML_SEPARATOR}\n\n"
-        f"📱 WhatsApp: {escape(ConfigBot.WHATSAPP)}\n"
-        f"📱 Telegram: {escape(ConfigBot.TELEGRAM)}\n\n"
+        f"📱 WhatsApp: {whatsapp}\n"
+        f"📱 Telegram: {telegram}\n\n"
         "<b>✨ Подписывайтесь на нас в Instagram</b> и будьте в курсе "
         "новинок и акций:\n"
         f"📸 <b>Instagram:</b> <a href=\"{INSTAGRAM_URL}\">{INSTAGRAM_URL}</a>"

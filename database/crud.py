@@ -1,9 +1,8 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from .engine import AsyncSessionLocal
-from .models import Category, Furniture, Order, User
-
+from .models import Category, Furniture, FurniturePhoto, Order, User
 
 # Эти варианты должны быть доступны до появления соответствующих товаров.
 REQUIRED_COUNTRIES = ("Россия", "Турция")
@@ -162,14 +161,17 @@ async def get_furniture_by_id(furniture_id: int) -> Furniture | None:
 async def create_order(
     user_id: str,
     furniture_id: int,
+    customer_name: str | None = None,
+    customer_phone: str | None = None,
     status: str = "new",
 ) -> Order:
     """Создать новую заявку на покупку товара."""
-    from .models import Order
     async with AsyncSessionLocal() as session:
         order = Order(
             user_id=user_id,
             furniture_id=furniture_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
             status=status,
         )
         session.add(order)
@@ -210,3 +212,193 @@ async def update_order_status(order_id: int, new_status: str) -> Order | None:
             await session.commit()
             await session.refresh(order)
         return order
+
+
+# --- Функции админ-панели ---
+
+async def get_category_by_name(name: str) -> Category | None:
+    """Проверить уникальность имени категории перед созданием."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Category).where(Category.name == name))
+        return result.scalar_one_or_none()
+
+
+async def create_category(name: str, description: str | None = None) -> Category:
+    """Добавить категорию каталога."""
+    async with AsyncSessionLocal() as session:
+        category = Category(name=name, description=description)
+        session.add(category)
+        await session.commit()
+        await session.refresh(category)
+        return category
+
+
+async def get_categories_with_counts() -> list[tuple[Category, int]]:
+    """Вернуть категории с числом товаров для админ-меню."""
+    query = (
+        select(Category, func.count(Furniture.id))
+        .outerjoin(Furniture, Furniture.category_name == Category.name)
+        .group_by(Category.id)
+        .order_by(Category.id)
+    )
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        return [(category, int(count)) for category, count in result.all()]
+
+
+async def delete_category(category_id: int) -> bool:
+    """Удалить категорию вместе с её товарами и фотографиями."""
+    async with AsyncSessionLocal() as session:
+        category = await session.get(Category, category_id)
+        if category is None:
+            return False
+
+        # Каскад на уровне ORM: сначала загружаем товары вместе с фото.
+        result = await session.execute(
+            select(Furniture)
+            .options(selectinload(Furniture.photos))
+            .where(Furniture.category_name == category.name)
+        )
+        for product in result.scalars().all():
+            await session.delete(product)
+        await session.delete(category)
+        await session.commit()
+        return True
+
+
+async def create_furniture_with_photos(
+    name: str,
+    description: str | None,
+    category_name: str,
+    category_id: int,
+    country: str | None = None,
+    subcategory: str | None = None,
+    whatsapp_contact: str | None = None,
+    telegram_contact: str | None = None,
+    photos: list[tuple[str, str]] | None = None,
+) -> Furniture:
+    """Создать товар и его фотографии одной транзакцией.
+
+    Каждый элемент photos — пара (file_id, file_path).
+    """
+    async with AsyncSessionLocal() as session:
+        product = Furniture(
+            name=name,
+            description=description,
+            category_name=category_name,
+            category_id=category_id,
+            country=country,
+            subcategory=subcategory,
+            whatsapp_contact=whatsapp_contact,
+            telegram_contact=telegram_contact,
+        )
+        for file_id, file_path in photos or []:
+            product.photos.append(
+                FurniturePhoto(file_id=file_id, file_path=file_path)
+            )
+        session.add(product)
+        await session.commit()
+        # refresh() не загружает связи: без этой выборки обращение к
+        # product.photos после закрытия сессии упадёт с DetachedInstanceError.
+        result = await session.execute(
+            select(Furniture)
+            .options(selectinload(Furniture.photos))
+            .where(Furniture.id == product.id)
+        )
+        return result.scalar_one()
+
+
+async def delete_furniture(furniture_id: int) -> bool:
+    """Удалить товар вместе с фотографиями."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Furniture)
+            .options(selectinload(Furniture.photos))
+            .where(Furniture.id == furniture_id)
+        )
+        product = result.scalar_one_or_none()
+        if product is None:
+            return False
+
+        await session.delete(product)
+        await session.commit()
+        return True
+
+
+async def get_subcategories_with_counts(category_name: str) -> list[tuple[str, int]]:
+    """Вернуть подкатегории категории с числом занимаемых товаров."""
+    query = (
+        select(Furniture.subcategory, func.count(Furniture.id))
+        .where(
+            Furniture.category_name == category_name,
+            Furniture.subcategory.is_not(None),
+        )
+        .group_by(Furniture.subcategory)
+        .order_by(Furniture.subcategory)
+    )
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        return [(str(value), int(count)) for value, count in result.all()]
+
+
+async def clear_subcategory(category_name: str, value: str) -> int:
+    """Убрать подкатегорию у всех товаров; сами товары остаются в каталоге."""
+    query = (
+        update(Furniture)
+        .where(Furniture.category_name == category_name, Furniture.subcategory == value)
+        .values(subcategory=None)
+    )
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        await session.commit()
+        return int(getattr(result, "rowcount", 0))
+
+
+async def get_admin_ids() -> list[int]:
+    """Telegram-идентификаторы всех администраторов для рассылки заявок."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(User.telegram_id).where(User.is_admin.is_(True))
+        )
+        return [int(telegram_id) for telegram_id in result.scalars().all()]
+
+
+async def get_order_by_id_full(order_id: int) -> Order | None:
+    """Вернуть заявку вместе с покупателем и товаром для карточки админа."""
+    query = (
+        select(Order)
+        .options(selectinload(Order.user), selectinload(Order.furniture))
+        .where(Order.id == order_id)
+    )
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        return result.scalar_one_or_none()
+
+
+async def get_orders_page(
+    page: int = 0,
+    page_size: int = 5,
+    status: str | None = None,
+) -> tuple[list[Order], int]:
+    """Вернуть страницу заявок (новые сверху) и общее количество.
+
+    Заявки загружаются вместе с покупателем и товаром.
+    """
+    filters = []
+    if status is not None:
+        filters.append(Order.status == status)
+
+    count_query = select(func.count()).select_from(Order).where(*filters)
+    items_query = (
+        select(Order)
+        .options(selectinload(Order.user), selectinload(Order.furniture))
+        .where(*filters)
+        .order_by(Order.id.desc())
+        .offset(max(page, 0) * page_size)
+        .limit(page_size)
+    )
+
+    async with AsyncSessionLocal() as session:
+        total = await session.scalar(count_query) or 0
+        result = await session.execute(items_query)
+        return list(result.scalars().all()), total

@@ -130,7 +130,12 @@ class OrderFlowTests(unittest.IsolatedAsyncioTestCase):
             user.return_value = SimpleNamespace(id="user-1")
             await order_confirm_handler(callback, state)
 
-        order.assert_awaited_once_with(user_id="user-1", furniture_id=42)
+        order.assert_awaited_once_with(
+            user_id="user-1",
+            furniture_id=42,
+            customer_name="Иван",
+            customer_phone="+7000",
+        )
         state.clear.assert_awaited_once()
         callback.message.edit_text.assert_awaited_once()
 
