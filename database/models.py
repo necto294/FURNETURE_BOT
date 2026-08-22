@@ -50,6 +50,8 @@ class Furniture(Base):
     # Контакты задаёт администратор при добавлении товара.
     whatsapp_contact = Column(String)
     telegram_contact = Column(String)
+    # Цена в рублях целым числом; None — «не указана».
+    price = Column(Integer)
     created_at = Column(DateTime, default=datetime.now)
 
     photos = relationship("FurniturePhoto", back_populates="furniture", cascade="all, delete-orphan")

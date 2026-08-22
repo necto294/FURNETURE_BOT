@@ -16,6 +16,7 @@ class NewFurnitureStates(StatesGroup):
     country = State()
     whatsapp_contact = State()
     telegram_contact = State()
+    price = State()
     photos = State()
 
 # Класс для состояний при УДАЛЕНИИ МЕБЕЛИ

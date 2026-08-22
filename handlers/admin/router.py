@@ -22,6 +22,7 @@ from database.crud import (
     get_subcategories_with_counts,
     get_user_by_telegram_id,
 )
+from handlers.backend.user.formatters import format_price
 from handlers.backend.user.texts import HTML_SEPARATOR
 from keyboard.admin_keyboards import (
     ADMIN_PAGE_SIZE,
@@ -415,6 +416,34 @@ async def add_furniture_telegram(message: Message, state: FSMContext) -> None:
     await state.update_data(
         telegram_contact=telegram if telegram != "-" else None,
     )
+    await state.set_state(NewFurnitureStates.price)
+    await message.answer(
+        "💰 Введите цену в рублях целым числом (например 24990;\n"
+        "<code>-</code> — оставить без цены):",
+    )
+
+
+@router.message(StateFilter(NewFurnitureStates.price), F.text)
+async def add_furniture_price(message: Message, state: FSMContext) -> None:
+    raw = message.text.strip().replace(" ", "")
+    if raw == "-":
+        await state.update_data(price=None)
+        await _start_photos_step(message, state)
+        return
+
+    try:
+        price = int(raw)
+    except ValueError:
+        await message.answer(
+            "Не понял цену. Введите целое число рублей (например 24990) "
+            "или <code>-</code>, чтобы пропустить:",
+        )
+        return
+    if price < 0:
+        await message.answer("Цена не может быть отрицательной. Попробуйте ещё раз:")
+        return
+
+    await state.update_data(price=price)
     await _start_photos_step(message, state)
 
 
@@ -466,6 +495,7 @@ async def add_furniture_save(callback: CallbackQuery, state: FSMContext) -> None
         subcategory=data.get("subcategory"),
         whatsapp_contact=data.get("whatsapp_contact"),
         telegram_contact=data.get("telegram_contact"),
+        price=data.get("price"),
         photos=[(file_id, path) for file_id, path in data.get("photos", [])],
     )
 
@@ -479,6 +509,8 @@ async def add_furniture_save(callback: CallbackQuery, state: FSMContext) -> None
         summary += f"📐 Тип: {escape(str(product.subcategory))}\n"
     if product.country:
         summary += f"🌍 Страна: {escape(str(product.country))}\n"
+    if product.price is not None:
+        summary += f"💰 Цена: {format_price(int(product.price))}\n"
     summary += f"📸 Фотографий: {len(product.photos)}\n\nТовар уже виден покупателям."
     await callback.message.edit_text(summary, reply_markup=back_to_admin_menu())
     await callback.answer()
@@ -718,6 +750,7 @@ async def subcategory_delete_apply(callback: CallbackQuery) -> None:
         NewCategoryStates.description_category,
         NewFurnitureStates.name,
         NewFurnitureStates.description,
+        NewFurnitureStates.price,
     ),
 )
 async def admin_wrong_input_handler(message: Message) -> None:

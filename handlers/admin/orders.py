@@ -8,6 +8,7 @@ from database.crud import (
     get_orders_page,
     update_order_status,
 )
+from handlers.backend.user.formatters import format_price
 from handlers.backend.user.texts import HTML_SEPARATOR
 from keyboard.admin_keyboards import (
     ADMIN_PAGE_SIZE,
@@ -42,11 +43,15 @@ def _customer_line(order) -> str:
 def _order_card_text(order) -> str:
     """Собрать карточку заявки для администратора."""
     status = ORDER_STATUS_LABELS.get(order.status, order.status)
-    product = (
-        f"<b>{escape(str(order.furniture.name))}</b>"
-        if order.furniture is not None
-        else "<i>товар удалён</i>"
-    )
+    if order.furniture is not None:
+        price = (
+            f" (💰 {format_price(order.furniture.price)})"
+            if order.furniture.price is not None
+            else ""
+        )
+        product = f"<b>{escape(str(order.furniture.name))}</b>{price}"
+    else:
+        product = "<i>товар удалён</i>"
     username = "нет"
     if order.user is not None and order.user.username:
         username = f"@{escape(order.user.username)}"

@@ -58,7 +58,7 @@ class OrderFlowTests(unittest.IsolatedAsyncioTestCase):
                 "handlers.backend.order.get_furniture_by_id", new_callable=AsyncMock
             ) as furniture,
         ):
-            furniture.return_value = SimpleNamespace(id=42, name="Диван")
+            furniture.return_value = SimpleNamespace(id=42, name="Диван", price=24990)
             await order_start_handler(callback, state)
 
         state.set_state.assert_awaited_once_with(OrderStates.name)

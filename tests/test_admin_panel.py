@@ -295,6 +295,7 @@ class AddFurnitureFlowTests(unittest.IsolatedAsyncioTestCase):
                 "country": "Турция",
                 "whatsapp_contact": "+79001234567",
                 "telegram_contact": "@shop",
+                "price": 24990,
                 "photos": [("file-1", "photos/file_1.jpg")],
             }
         )
@@ -304,6 +305,7 @@ class AddFurnitureFlowTests(unittest.IsolatedAsyncioTestCase):
             category_name="Мягкая мебель",
             subcategory=None,
             country="Турция",
+            price=24990,
             photos=[SimpleNamespace(), SimpleNamespace()],
         )
 
@@ -327,12 +329,15 @@ class AddFurnitureFlowTests(unittest.IsolatedAsyncioTestCase):
             subcategory=None,
             whatsapp_contact="+79001234567",
             telegram_contact="@shop",
+            price=24990,
             photos=[("file-1", "photos/file_1.jpg")],
         )
         state.clear.assert_awaited_once()
         summary = callback.message.edit_text.await_args.args[0]
         self.assertIn("№12", summary)
         self.assertIn("Диван угловой", summary)
+        # Цена выводится в итоговой сводке.
+        self.assertIn("24 990 ₽", summary)
 
 
 class OrderNotificationTests(unittest.IsolatedAsyncioTestCase):
@@ -515,7 +520,7 @@ class OrdersSectionHandlerTests(unittest.IsolatedAsyncioTestCase):
             customer_phone="+7000",
             created_at=None,
             user=SimpleNamespace(username="buyer"),
-            furniture=SimpleNamespace(name="Диван"),
+            furniture=SimpleNamespace(name="Диван", price=None),
         )
 
         with (
@@ -591,6 +596,49 @@ class SubcategoryViewTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertIn("Прямая (0)", buttons)
         self.assertIn("Угловая (0)", buttons)
+
+
+class PriceStepTests(unittest.IsolatedAsyncioTestCase):
+    async def test_valid_price_saved(self) -> None:
+        from handlers.admin.router import add_furniture_price
+
+        message = SimpleNamespace(text=" 24 990 ", answer=AsyncMock())
+        state = make_state()
+
+        await add_furniture_price(message, state)
+
+        state.update_data.assert_awaited_once_with(price=24990)
+        state.set_state.assert_awaited_once_with(NewFurnitureStates.photos)
+
+    async def test_dash_skips_price(self) -> None:
+        from handlers.admin.router import add_furniture_price
+
+        message = SimpleNamespace(text="-", answer=AsyncMock())
+        state = make_state()
+
+        await add_furniture_price(message, state)
+
+        state.update_data.assert_awaited_once_with(price=None)
+        state.set_state.assert_awaited_once_with(NewFurnitureStates.photos)
+
+    async def test_garbage_reprompts(self) -> None:
+        from handlers.admin.router import add_furniture_price
+
+        message = SimpleNamespace(text="дорого", answer=AsyncMock())
+        state = make_state()
+
+        await add_furniture_price(message, state)
+
+        state.update_data.assert_not_awaited()
+        state.set_state.assert_not_awaited()
+        self.assertIn("Не понял цену", message.answer.await_args.args[0])
+
+    async def test_format_price(self) -> None:
+        from handlers.backend.user.formatters import format_price
+
+        self.assertEqual(format_price(24990), "24 990 ₽")
+        self.assertEqual(format_price(1000), "1 000 ₽")
+        self.assertEqual(format_price(None), "не указана")
 
 
 if __name__ == "__main__":

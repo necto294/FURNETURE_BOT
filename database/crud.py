@@ -275,6 +275,7 @@ async def create_furniture_with_photos(
     subcategory: str | None = None,
     whatsapp_contact: str | None = None,
     telegram_contact: str | None = None,
+    price: int | None = None,
     photos: list[tuple[str, str]] | None = None,
 ) -> Furniture:
     """Создать товар и его фотографии одной транзакцией.
@@ -291,6 +292,7 @@ async def create_furniture_with_photos(
             subcategory=subcategory,
             whatsapp_contact=whatsapp_contact,
             telegram_contact=telegram_contact,
+            price=price,
         )
         for file_id, file_path in photos or []:
             product.photos.append(

@@ -14,6 +14,7 @@ from database.crud import (
     get_furniture_by_id,
     upsert_user,
 )
+from handlers.backend.user.formatters import format_price
 from keyboard.user_keyboards import (
     back_to_main_menu,
     cancel_order_menu,
@@ -52,7 +53,11 @@ async def order_start_handler(callback: CallbackQuery, state: FSMContext) -> Non
         return
 
     # Товар храним в FSM-контексте, чтобы показать его в подтверждении.
-    await state.update_data(product_id=product.id, product_name=product.name)
+    await state.update_data(
+        product_id=product.id,
+        product_name=product.name,
+        product_price=product.price,
+    )
     await state.set_state(OrderStates.name)
     await callback.message.answer(
         "📝 <b>Оформление заявки</b>\n\n"
@@ -101,9 +106,14 @@ async def order_phone_handler(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     await state.update_data(phone=phone)
     await state.set_state(OrderStates.confirm)
+    price_line = (
+        f"\n💰 Цена: {format_price(data.get('product_price'))}"
+        if data.get("product_price") is not None
+        else ""
+    )
     await message.answer(
         f"<b>Проверьте данные заявки:</b>\n\n"
-        f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>\n"
+        f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>{price_line}\n"
         f"👤 Имя: {escape(data['name'])}\n"
         f"📱 Телефон: {escape(phone)}\n\n"
         "Всё верно?",
@@ -147,11 +157,16 @@ async def order_confirm_handler(callback: CallbackQuery, state: FSMContext) -> N
         customer = escape(data["name"])
         phone = escape(data["phone"])
         username = f"@{callback.from_user.username}" if callback.from_user.username else "нет"
+        price_line = (
+            f"\n💰 Цена: {format_price(data.get('product_price'))}"
+            if data.get("product_price") is not None
+            else ""
+        )
         await notify_admins(
             bot,
             "<b>🛎 Новая заявка</b>\n\n"
             f"🧾 Номер: <b>№{order.id}</b>\n"
-            f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>\n"
+            f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>{price_line}\n"
             f"👤 Имя: {customer}\n"
             f"📱 Телефон: {phone}\n"
             f"💬 Telegram: {username}",

@@ -17,6 +17,13 @@ def country_label(country: str) -> str:
     return f"{flags.get(country, '🌍')} {escape(country)}"
 
 
+def format_price(price: int | None) -> str:
+    """Цена с пробелами между тысячами и знаком рубля; без цены — «не указана»."""
+    if price is None:
+        return "не указана"
+    return f"{price:,}".replace(",", " ") + " ₽"
+
+
 def build_product_card(product: Furniture, category_key: str) -> str:
     """Собрать HTML-карточку товара с контактами для заказа."""
     category_name, _ = CATEGORY_CONFIG.get(category_key, (category_key, None))
@@ -36,6 +43,7 @@ def build_product_card(product: Furniture, category_key: str) -> str:
         details += f"📐 Тип мебели: {escape(str(product.subcategory))}\n"
     if product.country is not None:
         details += f"🌍 Страна производства: {country_label(str(product.country))}\n"
+    details += f"💰 Цена: <b>{format_price(product.price)}</b>\n"
     # Контакты задаёт администратор при добавлении товара.
     whatsapp = escape(str(product.whatsapp_contact)) if product.whatsapp_contact else "не указан"
     telegram = escape(str(product.telegram_contact)) if product.telegram_contact else "не указан"
