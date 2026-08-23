@@ -404,3 +404,26 @@ async def get_orders_page(
         total = await session.scalar(count_query) or 0
         result = await session.execute(items_query)
         return list(result.scalars().all()), total
+
+
+async def get_all_orders_full() -> list[Order]:
+    """Все заявки с покупателем и товаром — для экспорта в CSV.
+
+    Связи грузим сразу: после возврата объекты отсоединены.
+    """
+    query = (
+        select(Order)
+        .options(selectinload(Order.user), selectinload(Order.furniture))
+        .order_by(Order.id.desc())
+    )
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
+async def get_order_status_counts() -> dict[str, int]:
+    """Снимок статистики: число заявок в каждом статусе."""
+    query = select(Order.status, func.count()).group_by(Order.status)
+    async with AsyncSessionLocal() as session:
+        rows = await session.execute(query)
+        return {status: int(count) for status, count in rows.all()}

@@ -180,6 +180,14 @@ ORDER_STATUS_LABELS = {
     "cancelled": "🚫 Отменена",
 }
 
+# Те же метки без эмодзи — для колонки «Статус» в CSV-выгрузке.
+ORDER_STATUS_CSV_LABELS = {
+    "new": "Новая",
+    "processing": "В работе",
+    "completed": "Выполнена",
+    "cancelled": "Отменена",
+}
+
 
 def orders_list_menu(
     orders: list,
@@ -217,8 +225,28 @@ def orders_list_menu(
         )
     if navigation:
         rows.append(navigation)
+    rows.append(
+        [
+            InlineKeyboardButton(text="📊 Статистика", callback_data="adm:ostats"),
+            InlineKeyboardButton(text="⬇️ Экспорт CSV", callback_data="adm:oexport"),
+        ]
+    )
     rows.append([_cancel_button("◀️ В админку")])
     return _keyboard(rows)
+
+
+def orders_stats_menu() -> InlineKeyboardMarkup:
+    """Кнопки экрана статистики заявок."""
+    return _keyboard(
+        [
+            [InlineKeyboardButton(text="⬇️ Экспорт CSV", callback_data="adm:oexport")],
+            [
+                InlineKeyboardButton(
+                    text="◀️ К заявкам", callback_data="adm:orders"
+                )
+            ],
+        ]
+    )
 
 
 def order_card_menu(order_id: int, status: str, page: int) -> InlineKeyboardMarkup:
