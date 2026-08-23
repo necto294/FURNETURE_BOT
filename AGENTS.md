@@ -37,9 +37,16 @@
 
 ## Архитектура
 
-- Роутеры в `main.py` (порядок важен): `handlers/admin/router.py` (+ вложенный
-  `handlers/admin/orders.py`), `handlers/backend/user/router.py` (каталог),
+- Роутеры в `main.py` (порядок важен): `handlers/admin` (сборка в
+  `__init__.py`: меню в `router.py`, потоки в `categories.py` /
+  `furniture.py` / `subcategories.py` / `orders.py`; доступ — один middleware
+  `access.setup_admin_access` на родительском роутере, хендлеры прав НЕ
+  проверяют),
+  `handlers/backend/user/router.py` (каталог),
   `handlers/backend/order.py` (FSM-заявка: имя → телефон → подтверждение).
+- Fallback «отправьте текстом» для админских FSM живёт ВНУТРИ своего модуля
+  (`categories.py`, `furniture.py`) и регистрируется после текстовых
+  хендлеров этого модуля.
 - Навигация на строках callback_data: `category:<id>`,
   `filter:<key>:<тип>:<значение>`, `page:<key>:<стр>:<тип>:<значение>`,
   `product:<id>:<key>:<тип>:<значение>:<стр>`, `order:<id>`,

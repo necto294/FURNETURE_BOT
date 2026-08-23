@@ -16,8 +16,7 @@ from keyboard.admin_keyboards import (
     order_card_menu,
     orders_list_menu,
 )
-
-from .router import _is_admin
+from utils.phone import pretty_phone
 
 router = Router(name="admin_orders")
 
@@ -27,6 +26,27 @@ VALID_STATUSES = ("new", "processing", "completed", "cancelled")
 
 def _format_datetime(value) -> str:
     return value.strftime("%d.%m.%Y %H:%M") if value else "не указана"
+
+
+def _phone_line(order) -> str:
+    """Телефон из формы: человекочитаемо + E.164 в <code> для копирования.
+
+    Исторические записи (до нормализации) показываем как есть.
+    """
+    stored = str(order.customer_phone or "")
+    if not stored:
+        return "не указан"
+    pretty = pretty_phone(stored)
+    if pretty is None:
+        return escape(stored)
+    return f"{escape(pretty)} (<code>{escape(stored)}</code>)"
+    stored = str(order.customer_phone or "")
+    if not stored:
+        return "не указан"
+    pretty = pretty_phone(stored)
+    if pretty is None:
+        return escape(stored)
+    return f"{escape(pretty)} (<code>{escape(stored)}</code>)"
 
 
 def _customer_line(order) -> str:
@@ -61,7 +81,7 @@ def _order_card_text(order) -> str:
         f"{HTML_SEPARATOR}\n\n"
         f"🪑 Товар: {product}\n"
         f"👤 Имя: {_customer_line(order)}\n"
-        f"📱 Телефон: {escape(str(order.customer_phone or 'не указан'))}\n"
+        f"📱 Телефон: {_phone_line(order)}\n"
         f"💬 Telegram: {username}\n"
         f"📆 Создана: {_format_datetime(order.created_at)}\n"
         f"{HTML_SEPARATOR}\n"
@@ -110,26 +130,17 @@ async def _show_order_card(callback: CallbackQuery, order_id: int, page: int) ->
 
 @router.callback_query(F.data == "adm:orders")
 async def orders_start_handler(callback: CallbackQuery) -> None:
-    if not await _is_admin(callback):
-        await callback.answer("⛔ Раздел доступен только администраторам.", show_alert=True)
-        return
     await _show_orders_list(callback, page=0)
 
 
 @router.callback_query(F.data.startswith("adm:orders:"))
 async def orders_page_handler(callback: CallbackQuery) -> None:
-    if not await _is_admin(callback):
-        await callback.answer("⛔ Раздел доступен только администраторам.", show_alert=True)
-        return
     # callback_data вида adm:orders:<страница>.
     await _show_orders_list(callback, page=int(callback.data.split(":")[2]))
 
 
 @router.callback_query(F.data.startswith("adm:order:"))
 async def order_card_handler(callback: CallbackQuery) -> None:
-    if not await _is_admin(callback):
-        await callback.answer("⛔ Раздел доступен только администраторам.", show_alert=True)
-        return
     # callback_data вида adm:order:<id>:<страница>.
     _, _, order_id, page = callback.data.split(":")
     await _show_order_card(callback, int(order_id), int(page))
@@ -137,9 +148,6 @@ async def order_card_handler(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("adm:ost:"))
 async def order_status_handler(callback: CallbackQuery) -> None:
-    if not await _is_admin(callback):
-        await callback.answer("⛔ Раздел доступен только администраторам.", show_alert=True)
-        return
     # callback_data вида adm:ost:<id>:<статус>:<страница>.
     _, _, order_id, new_status, page = callback.data.split(":")
     if new_status not in VALID_STATUSES:

@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -17,12 +18,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from database import crud
 from database.engine import Base
 from database.models import FurniturePhoto
-from handlers.admin.router import (
-    add_category_start,
-    add_furniture_name,
-    add_furniture_save,
-    admin_menu_command,
-)
+from handlers.admin.furniture import add_furniture_name, add_furniture_save
+from handlers.admin.router import admin_menu_command
 from states.states import NewFurnitureStates
 
 ADMIN_USER = SimpleNamespace(id="uuid-1", telegram_id=777, is_admin=True)
@@ -46,8 +43,22 @@ class _AnyMessage(metaclass=_AnyMessageMeta):
     """Заменяет Message в isinstance-проверках обработчиков."""
 
 
+class _AnyCallbackQueryMeta(type):
+    # Аналог _AnyMessage для CallbackQuery.
+    def __instancecheck__(cls, instance) -> bool:
+        return True
+
+
+class _AnyCallbackQuery(metaclass=_AnyCallbackQueryMeta):
+    """Заменяет CallbackQuery в isinstance-проверках."""
+
+
 def patch_admin_message() -> Any:
-    return patch("handlers.admin.router.Message", _AnyMessage)
+    # Хендлеры разнесены по модулям, каждый импортирует Message отдельно.
+    stack = ExitStack()
+    for module in ("router", "categories", "furniture", "subcategories"):
+        stack.enter_context(patch(f"handlers.admin.{module}.Message", _AnyMessage))
+    return stack
 
 
 def make_admin_event(data: str = "adm:menu", with_bot: bool = False) -> SimpleNamespace:
@@ -68,15 +79,6 @@ def make_admin_event(data: str = "adm:menu", with_bot: bool = False) -> SimpleNa
             last_name="Админова",
         ),
         answer=AsyncMock(),
-    )
-
-
-def patch_admin_check():
-    # Все обработчики панели проверяют is_admin через get_user_by_telegram_id.
-    return patch(
-        "handlers.admin.router.get_user_by_telegram_id",
-        new_callable=AsyncMock,
-        return_value=ADMIN_USER,
     )
 
 
@@ -185,23 +187,102 @@ class AdminCrudTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AdminAccessTests(unittest.IsolatedAsyncioTestCase):
-    async def test_command_denied_for_regular_user(self) -> None:
+    """Проверки шва авторизации: middleware в handlers.admin.access."""
+
+    async def test_message_denied_for_regular_user(self) -> None:
+        from handlers.admin.access import admin_guard
+
         message = SimpleNamespace(
             from_user=SimpleNamespace(id=1111, username="guest"),
             answer=AsyncMock(),
         )
-        state = AsyncMock()
+        handler = AsyncMock(return_value="passed")
 
         with patch(
-            "handlers.admin.router.get_user_by_telegram_id",
+            "handlers.admin.access.get_user_by_telegram_id",
             new_callable=AsyncMock,
             return_value=REGULAR_USER,
         ):
-            await admin_menu_command(message, state)
+            result = await admin_guard(handler, message, {})
 
-        state.clear.assert_awaited_once()
+        self.assertIsNone(result)
+        handler.assert_not_awaited()
         message.answer.assert_awaited_once()
         self.assertIn("администратор", message.answer.await_args.args[0])
+
+    async def test_callback_denied_without_admin_flag(self) -> None:
+        from handlers.admin.access import admin_guard
+
+        callback = make_admin_event("adm:addcat")
+        handler = AsyncMock()
+
+        with (
+            patch(
+                "handlers.admin.access.get_user_by_telegram_id",
+                new_callable=AsyncMock,
+                return_value=REGULAR_USER,
+            ),
+            # SimpleNamespace не проходит isinstance(event, CallbackQuery),
+            # поэтому подменяем класс в модуле access (трюк как с Message).
+            patch("handlers.admin.access.CallbackQuery", _AnyCallbackQuery),
+        ):
+            await admin_guard(handler, callback, {})
+
+        handler.assert_not_awaited()
+        callback.answer.assert_awaited_once()
+        self.assertTrue(callback.answer.await_args.kwargs.get("show_alert"))
+
+    async def test_db_admin_passes_through(self) -> None:
+        # Админ по флагу is_admin в базе проходит дальше без ответа.
+        from handlers.admin.access import admin_guard
+
+        event = make_admin_event("adm:addcat")
+        handler = AsyncMock(return_value="passed")
+
+        with patch(
+            "handlers.admin.access.get_user_by_telegram_id",
+            new_callable=AsyncMock,
+            return_value=ADMIN_USER,
+        ):
+            result = await admin_guard(handler, event, {})
+
+        self.assertEqual(result, "passed")
+        handler.assert_awaited_once_with(event, {})
+        event.answer.assert_not_awaited()
+
+    async def test_env_admin_allowed_without_db_record(self) -> None:
+        # Админ из .env получает доступ даже без записи в базе
+        # и без похода в базу вообще.
+        from handlers.admin.access import admin_guard
+
+        event = make_admin_event("adm:addcat")
+        event.from_user.id = 555
+        handler = AsyncMock(return_value="passed")
+
+        with (
+            patch("handlers.admin.access.ConfigBot.ADMIN_IDS", (555,)),
+            patch(
+                "handlers.admin.access.get_user_by_telegram_id",
+                new_callable=AsyncMock,
+                return_value=REGULAR_USER,
+            ) as lookup,
+        ):
+            result = await admin_guard(handler, event, {})
+
+        self.assertEqual(result, "passed")
+        lookup.assert_not_awaited()
+
+    async def test_setup_attaches_guard_to_router(self) -> None:
+        # Сборка в handlers/admin/__init__.py обязана защищать роутер.
+        from aiogram import Router
+
+        from handlers.admin.access import admin_guard, setup_admin_access
+
+        checked = Router(name="test")
+        setup_admin_access(checked)
+        # outer_middleware — MiddlewareManager, он реализует Sequence.
+        self.assertIn(admin_guard, checked.message.outer_middleware)
+        self.assertIn(admin_guard, checked.callback_query.outer_middleware)
 
     async def test_command_shows_menu_for_admin(self) -> None:
         message = SimpleNamespace(
@@ -210,16 +291,9 @@ class AdminAccessTests(unittest.IsolatedAsyncioTestCase):
         )
         state = AsyncMock()
 
-        with (
-            patch(
-                "handlers.admin.router.get_user_by_telegram_id",
-                new_callable=AsyncMock,
-                return_value=ADMIN_USER,
-            ),
-            patch(
-                "handlers.admin.router.admin_main_menu",
-                return_value="menu",
-            ),
+        with patch(
+            "handlers.admin.router.admin_main_menu",
+            return_value="menu",
         ):
             await admin_menu_command(message, state)
 
@@ -229,49 +303,6 @@ class AdminAccessTests(unittest.IsolatedAsyncioTestCase):
         # В приветствии есть инструкция по возможностям панели.
         self.assertIn("Добавить товар", message.answer.await_args.args[0])
         self.assertIn("Подкатегории", message.answer.await_args.args[0])
-
-    async def test_callback_denied_without_admin_flag(self) -> None:
-        callback = make_admin_event("adm:addcat")
-        state = AsyncMock()
-
-        with (
-            patch(
-                "handlers.admin.router.get_user_by_telegram_id",
-                new_callable=AsyncMock,
-                return_value=REGULAR_USER,
-            ),
-            patch_admin_message(),
-        ):
-            await add_category_start(callback, state)
-
-        callback.answer.assert_awaited_once()
-        self.assertTrue(callback.answer.await_args.kwargs.get("show_alert"))
-        state.set_state.assert_not_awaited()
-
-    async def test_env_admin_allowed_without_db_record(self) -> None:
-        # Админ из .env получает доступ даже без записи в базе.
-        message = SimpleNamespace(
-            from_user=SimpleNamespace(id=555, username="from_env", first_name="Пётр"),
-            answer=AsyncMock(),
-        )
-        state = AsyncMock()
-
-        with (
-            patch("handlers.admin.router.ConfigBot.ADMIN_IDS", (555,)),
-            patch(
-                "handlers.admin.router.get_user_by_telegram_id",
-                new_callable=AsyncMock,
-                return_value=REGULAR_USER,
-            ),
-            patch(
-                "handlers.admin.router.admin_main_menu",
-                return_value="menu",
-            ),
-        ):
-            await admin_menu_command(message, state)
-
-        message.answer.assert_awaited_once()
-        self.assertIn("Панель администратора", message.answer.await_args.args[0])
 
 
 class AddFurnitureFlowTests(unittest.IsolatedAsyncioTestCase):
@@ -311,9 +342,8 @@ class AddFurnitureFlowTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch_admin_message(),
-            patch_admin_check() as _,
             patch(
-                "handlers.admin.router.create_furniture_with_photos",
+                "handlers.admin.furniture.create_furniture_with_photos",
                 new_callable=AsyncMock,
                 return_value=saved,
             ) as create,
@@ -477,7 +507,7 @@ class DeleteFurnitureListTests(unittest.IsolatedAsyncioTestCase):
     async def test_entry_callback_without_page_opens_first_page(self) -> None:
         # Регрессия: кнопка категории шлёт adm:delfurn:<id> без страницы,
         # и разбор падал с «not enough values to unpack».
-        from handlers.admin.router import delete_furniture_list
+        from handlers.admin.furniture import delete_furniture_list
 
         category = await crud.create_category("Матрасы")
         await crud.create_furniture_with_photos(
@@ -489,14 +519,7 @@ class DeleteFurnitureListTests(unittest.IsolatedAsyncioTestCase):
         )
         callback = make_admin_event(f"adm:delfurn:{category.id}")
 
-        with (
-            patch_admin_message(),
-            patch(
-                "handlers.admin.router.get_user_by_telegram_id",
-                new_callable=AsyncMock,
-                return_value=ADMIN_USER,
-            ),
-        ):
+        with patch_admin_message():
             await delete_furniture_list(callback)
 
         callback.answer.assert_awaited_with()
@@ -527,11 +550,6 @@ class OrdersSectionHandlerTests(unittest.IsolatedAsyncioTestCase):
             patch_admin_message(),
             # orders.py импортирует Message отдельно — патчим и его.
             patch("handlers.admin.orders.Message", _AnyMessage),
-            patch(
-                "handlers.admin.router.get_user_by_telegram_id",
-                new_callable=AsyncMock,
-                return_value=ADMIN_USER,
-            ),
             patch(
                 "handlers.admin.orders.update_order_status",
                 new_callable=AsyncMock,
@@ -575,19 +593,12 @@ class SubcategoryViewTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_kitchen_shows_guaranteed_types_without_products(self) -> None:
         # Регрессия: у пустой кухни должны быть видны «Прямая» и «Угловая».
-        from handlers.admin.router import subcategory_list
+        from handlers.admin.subcategories import subcategory_list
 
         category = await crud.create_category("Кухонная мебель")
         callback = make_admin_event(f"adm:subcat:{category.id}")
 
-        with (
-            patch_admin_message(),
-            patch(
-                "handlers.admin.router.get_user_by_telegram_id",
-                new_callable=AsyncMock,
-                return_value=ADMIN_USER,
-            ),
-        ):
+        with patch_admin_message():
             await subcategory_list(callback)
 
         markup = callback.message.edit_text.await_args.kwargs["reply_markup"]
@@ -600,7 +611,7 @@ class SubcategoryViewTests(unittest.IsolatedAsyncioTestCase):
 
 class PriceStepTests(unittest.IsolatedAsyncioTestCase):
     async def test_valid_price_saved(self) -> None:
-        from handlers.admin.router import add_furniture_price
+        from handlers.admin.furniture import add_furniture_price
 
         message = SimpleNamespace(text=" 24 990 ", answer=AsyncMock())
         state = make_state()
@@ -611,7 +622,7 @@ class PriceStepTests(unittest.IsolatedAsyncioTestCase):
         state.set_state.assert_awaited_once_with(NewFurnitureStates.photos)
 
     async def test_dash_skips_price(self) -> None:
-        from handlers.admin.router import add_furniture_price
+        from handlers.admin.furniture import add_furniture_price
 
         message = SimpleNamespace(text="-", answer=AsyncMock())
         state = make_state()
@@ -622,7 +633,7 @@ class PriceStepTests(unittest.IsolatedAsyncioTestCase):
         state.set_state.assert_awaited_once_with(NewFurnitureStates.photos)
 
     async def test_garbage_reprompts(self) -> None:
-        from handlers.admin.router import add_furniture_price
+        from handlers.admin.furniture import add_furniture_price
 
         message = SimpleNamespace(text="дорого", answer=AsyncMock())
         state = make_state()
