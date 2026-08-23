@@ -4,6 +4,7 @@ from html import escape
 from io import StringIO
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramForbiddenError
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from database.crud import (
@@ -161,13 +162,55 @@ async def order_status_handler(callback: CallbackQuery) -> None:
         await callback.answer("Неизвестный статус", show_alert=True)
         return
 
+    # Прежний статус нужен до обновления — по нему решаем, уведомлять ли.
+    previous = await get_order_by_id_full(int(order_id))
     updated = await update_order_status(int(order_id), new_status)
     await callback.answer(
         "Статус обновлён" if updated else "Заявка не найдена",
         show_alert=updated is None,
     )
-    if updated is not None:
-        await _show_order_card(callback, int(order_id), int(page))
+    if updated is None:
+        return
+
+    await _show_order_card(callback, int(order_id), int(page))
+    # Уведомление — при реальной смене статуса на целевой (CONTEXT.md).
+    if (
+        previous is not None
+        and previous.status != new_status
+        and new_status in BUYER_STATUS_MESSAGES
+    ):
+        bot = getattr(callback.message, "bot", None)
+        if bot is not None:
+            await _notify_buyer(bot, previous, new_status)
+
+
+# --- Уведомление покупателя о смене статуса ---
+
+# Покупатель узнаёт о переходе в эти статусы; «Новая» и повтор той же
+# метки проходят молча (CONTEXT.md «Уведомление покупателя»).
+BUYER_STATUS_MESSAGES = {
+    "processing": "🔧 Ваша заявка №{number} «{product}» принята в работу.",
+    "completed": "✅ Ваша заявка №{number} «{product}» выполнена.",
+    "cancelled": "🚫 Ваша заявка №{number} «{product}» отменена.",
+}
+
+
+async def _notify_buyer(bot, order, new_status: str) -> None:
+    """Отправить покупателю одну строку о новом статусе заявки.
+
+    Заблокированный бот — не ошибка: молча пропускаем, как в notify_admins.
+    """
+    template = BUYER_STATUS_MESSAGES.get(new_status)
+    if template is None or order.user is None:
+        return
+    product = (
+        str(order.furniture.name) if order.furniture is not None else "товар удалён"
+    )
+    text = template.format(number=order.id, product=escape(product))
+    try:
+        await bot.send_message(order.user.telegram_id, text)
+    except TelegramForbiddenError:
+        pass
 
 
 # --- Статистика и экспорт заявок ---
