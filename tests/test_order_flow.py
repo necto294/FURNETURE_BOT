@@ -102,11 +102,29 @@ class OrderFlowTests(unittest.IsolatedAsyncioTestCase):
 
         await order_phone_handler(message, state)
 
-        state.update_data.assert_awaited_once_with(phone="+7 900 123-45-67")
+        # Номер нормализуется в E.164 до сохранения в FSM.
+        state.update_data.assert_awaited_once_with(phone="+79001234567")
         state.set_state.assert_awaited_once_with(OrderStates.confirm)
         confirmation = message.answer.await_args.args[0]
         self.assertIn("Диван", confirmation)
         self.assertIn("Иван", confirmation)
+        self.assertIn("+7 900 123-45-67", confirmation)
+
+    async def test_invalid_phone_reprompts(self) -> None:
+        # Локальная запись невалидна для региона по умолчанию —
+        # заявка не отклоняется, просим повторить ввод.
+        message = SimpleNamespace(text="0151 23456789", answer=AsyncMock())
+        state = make_state(
+            {"product_id": 42, "product_name": "Диван", "name": "Иван"}
+        )
+
+        await order_phone_handler(message, state)
+
+        state.update_data.assert_not_awaited()
+        state.set_state.assert_not_awaited()
+        hint = message.answer.await_args.args[0]
+        self.assertIn("Не удалось распознать", hint)
+        self.assertIn("код страны", hint)
 
     async def test_confirm_creates_order(self) -> None:
         callback = SimpleNamespace(

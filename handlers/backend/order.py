@@ -23,6 +23,7 @@ from keyboard.user_keyboards import (
 )
 from settings.config import ConfigBot
 from states.states import OrderStates
+from utils.phone import normalize_phone, pretty_phone
 
 router = Router(name="user_order")
 
@@ -96,26 +97,32 @@ async def order_name_handler(message: Message, state: FSMContext) -> None:
 @router.message(StateFilter(OrderStates.phone), F.text)
 async def order_phone_handler(message: Message, state: FSMContext) -> None:
     phone = message.text.strip()
-    if not phone:
+    # Строгая нормализация в E.164 (ADR 0001): нераспознанный номер
+    # не отклоняет заявку, а просит повторить ввод.
+    normalized = normalize_phone(phone)
+    if not phone or normalized is None:
         await message.answer(
-            "Номер не может быть пустым. Пожалуйста, введите ваш номер телефона:",
+            "Не удалось распознать номер телефона.\n"
+            "Введите его ещё раз — например <code>+7 900 123 45 67</code>.\n"
+            "Если вы не из России, укажите код страны через «+».",
             reply_markup=cancel_order_menu(),
         )
         return
 
     data = await state.get_data()
-    await state.update_data(phone=phone)
+    await state.update_data(phone=normalized)
     await state.set_state(OrderStates.confirm)
     price_line = (
         f"\n💰 Цена: {format_price(data.get('product_price'))}"
         if data.get("product_price") is not None
         else ""
     )
+    pretty = escape(pretty_phone(normalized) or normalized)
     await message.answer(
         f"<b>Проверьте данные заявки:</b>\n\n"
         f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>{price_line}\n"
         f"👤 Имя: {escape(data['name'])}\n"
-        f"📱 Телефон: {escape(phone)}\n\n"
+        f"📱 Телефон: {pretty}\n\n"
         "Всё верно?",
         reply_markup=order_confirmation_menu(),
     )
@@ -155,7 +162,9 @@ async def order_confirm_handler(callback: CallbackQuery, state: FSMContext) -> N
     bot = getattr(callback.message, "bot", None)
     if bot is not None:
         customer = escape(data["name"])
-        phone = escape(data["phone"])
+        # Нормализованный номер: человекочитаемо + E.164 для копирования.
+        e164 = data["phone"]
+        phone_display = escape(pretty_phone(e164) or e164)
         username = f"@{callback.from_user.username}" if callback.from_user.username else "нет"
         price_line = (
             f"\n💰 Цена: {format_price(data.get('product_price'))}"
@@ -168,7 +177,7 @@ async def order_confirm_handler(callback: CallbackQuery, state: FSMContext) -> N
             f"🧾 Номер: <b>№{order.id}</b>\n"
             f"🪑 Товар: <b>{escape(str(data['product_name']))}</b>{price_line}\n"
             f"👤 Имя: {customer}\n"
-            f"📱 Телефон: {phone}\n"
+            f"📱 Телефон: {phone_display} (<code>{escape(e164)}</code>)\n"
             f"💬 Telegram: {username}",
         )
 
