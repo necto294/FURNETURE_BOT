@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
-from database import crud
+from database import crud, engine
 from database.engine import Base
 from database.models import User
 
@@ -27,11 +27,11 @@ class UpsertUserTests(unittest.IsolatedAsyncioTestCase):
         self.session_factory = async_sessionmaker(
             bind=self.engine, expire_on_commit=False
         )
-        self._original_session = crud.AsyncSessionLocal
-        crud.AsyncSessionLocal = self.session_factory
+        self._original_session = engine.AsyncSessionLocal
+        engine.AsyncSessionLocal = self.session_factory
 
     async def asyncTearDown(self) -> None:
-        crud.AsyncSessionLocal = self._original_session
+        engine.AsyncSessionLocal = self._original_session
         await self.engine.dispose()
         os.unlink(self._tmp_path)
 

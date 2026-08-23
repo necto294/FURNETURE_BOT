@@ -158,28 +158,3 @@ async def back_to_main_handler(callback: CallbackQuery) -> None:
         START_TEXT, reply_markup=main_menu(await get_categories())
     )
     await callback.answer()
-
-
-@router.callback_query(F.data.startswith("back:category:"))
-async def back_to_category_handler(callback: CallbackQuery) -> None:
-    if not isinstance(callback.message, Message) or callback.data is None:
-        return
-
-    category_key = callback.data.split(":", 2)[2]
-    category_name, filter_type = CATEGORY_CONFIG.get(category_key, (category_key, None))
-
-    if filter_type == "country":
-        values = await get_filter_values(category_name, filter_type)
-        keyboard = filter_menu(category_key, filter_type, values)
-        text = f"{category_name}\n\nОтлично! Теперь выберите страну производства:"
-    elif filter_type == "subcategory":
-        values = await get_filter_values(category_name, filter_type)
-        keyboard = filter_menu(category_key, filter_type, values)
-        text = f"{category_name}\n\nХорошо, теперь выберите тип кухни:"
-    else:
-        await show_products(callback, category_key)
-        await callback.answer()
-        return
-
-    await callback.message.edit_text(text, reply_markup=keyboard)
-    await callback.answer()

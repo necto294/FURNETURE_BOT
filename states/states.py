@@ -19,11 +19,6 @@ class NewFurnitureStates(StatesGroup):
     price = State()
     photos = State()
 
-# Класс для состояний при УДАЛЕНИИ МЕБЕЛИ
-class RemoveFurnitureStates(StatesGroup):
-    select_furniture = State()
-
-
 # Класс для состояний при ОФОРМЛЕНИИ ЗАЯВКИ
 class OrderStates(StatesGroup):
     name = State()

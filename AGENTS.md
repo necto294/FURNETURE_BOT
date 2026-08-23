@@ -39,7 +39,8 @@
 
 - Роутеры в `main.py` (порядок важен): `handlers/admin` (сборка в
   `__init__.py`: меню в `router.py`, потоки в `categories.py` /
-  `furniture.py` / `subcategories.py` / `orders.py`; доступ — один middleware
+  `furniture.py` (добавление) / `furniture_delete.py` (удаление) /
+  `subcategories.py` / `orders.py`; доступ — один middleware
   `access.setup_admin_access` на родительском роутере, хендлеры прав НЕ
   проверяют),
   `handlers/backend/user/router.py` (каталог),
@@ -84,7 +85,12 @@
   номер — повторный ввод, не отклонение. То же правило действует для
   WhatsApp-контакта товара при добавлении (был баг: номер сохранялся как
   введён). Тесты — шаблонными номерами libphonenumber, не реальными.
-- Тесты подменяют `crud.AsyncSessionLocal` временной SQLite-базой;
+- CRUD разнесён на `database/crud_catalog.py` (категории, товары,
+  подкатегории, пользователи) и `database/crud_orders.py` (заявки);
+  `database/crud.py` — фасад-реэкспорт, внешние импорты идут через него.
+  Обе половины берут сессию как `engine.AsyncSessionLocal()` в момент
+  вызова — тесты подменяют именно `engine.AsyncSessionLocal` временной
+  SQLite-базой (единая точка патча для обеих половин);
   aiogram-объекты — `SimpleNamespace` + `AsyncMock`. Для обхода
   `isinstance(message, Message)` — трюк `_AnyMessage` (метакласс); помни,
   что патчить надо `Message` в том модуле, где хендлер его импортировал.

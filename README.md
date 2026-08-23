@@ -76,12 +76,14 @@ main.py                         запуск бота и подключение 
 settings/config.py              загрузка токена
 handlers/backend/user/router.py пользовательские обработчики каталога
 handlers/backend/order.py       FSM-заявка и уведомление админов
-handlers/admin/router.py        админ-панель (/admin): категории, товары, подкатегории
+handlers/admin/router.py        админ-панель (/admin): меню и шов авторизации
+handlers/admin/furniture.py     админ-мастер добавления товара
 handlers/admin/orders.py        админ-раздел «Заявки»: список, карточка, статусы
 keyboard/user_keyboards.py      inline-клавиатуры каталога
 keyboard/admin_keyboards.py     inline-клавиатуры админ-панели
 database/models.py              модели SQLAlchemy
-database/crud.py                запросы каталога и функции админ-части
+database/crud_catalog.py        CRUD каталога, подкатегорий и пользователей
+database/crud_orders.py         CRUD заявок (списки, статусы, экспорт)
 database/engine.py              асинхронное подключение к SQLite
 alembic/                        миграции базы данных
 states/states.py                состояния FSM каталога и админ-панели
