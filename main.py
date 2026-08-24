@@ -7,6 +7,8 @@ from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import DeleteWebhook
 from aiogram.types import BotCommand, BotCommandScopeChat
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 from sqlalchemy import text
 
 from database.engine import async_engine as engine
@@ -68,6 +70,45 @@ async def wait_for_database(
             await asyncio.sleep(delay)
 
 
+async def run_webhook(bot: Bot, dispatcher: Dispatcher) -> None:
+    """Запустить HTTP-сервер для приёма обновлений Telegram."""
+    app = web.Application()
+    webhook_handler = SimpleRequestHandler(
+        dispatcher=dispatcher,
+        bot=bot,
+        secret_token=ConfigBot.WEBHOOK_SECRET_TOKEN or None,
+        handle_in_background=True,
+    )
+    webhook_handler.register(app, path=ConfigBot.WEBHOOK_PATH)
+    setup_application(app, dispatcher, bot=bot)
+
+    await bot.set_webhook(
+        url=f"{ConfigBot.WEBHOOK_BASE_URL}{ConfigBot.WEBHOOK_PATH}",
+        secret_token=ConfigBot.WEBHOOK_SECRET_TOKEN or None,
+        drop_pending_updates=True,
+    )
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(
+        runner,
+        host=ConfigBot.WEB_SERVER_HOST,
+        port=ConfigBot.WEB_SERVER_PORT,
+    )
+    await site.start()
+    logger.info(
+        "Webhook запущен: %s%s, слушаем %s:%s",
+        ConfigBot.WEBHOOK_BASE_URL,
+        ConfigBot.WEBHOOK_PATH,
+        ConfigBot.WEB_SERVER_HOST,
+        ConfigBot.WEB_SERVER_PORT,
+    )
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await runner.cleanup()
+
+
 async def main() -> None:
     # Настраиваем базовое логирование приложения.
     logging.basicConfig(
@@ -89,13 +130,17 @@ async def main() -> None:
     # Регистрируем команды, чтобы /start и /admin были видны в меню Telegram.
     await setup_commands(bot)
 
-    # Не выходим в polling, пока БД не примет соединения.
+    # Не выходим к обновлениям, пока БД не примет соединения:
+    # и polling, и webhook обслуживают хендлеры с обращениями к базе.
     await wait_for_database()
 
-    # Удаляем старый webhook перед запуском long polling.
-    await bot(DeleteWebhook(drop_pending_updates=True))
     try:
-        await dispatcher.start_polling(bot)
+        if ConfigBot.WEBHOOK_BASE_URL:
+            await run_webhook(bot, dispatcher)
+        else:
+            # Удаляем старый webhook перед запуском long polling.
+            await bot(DeleteWebhook(drop_pending_updates=True))
+            await dispatcher.start_polling(bot)
     finally:
         # Закрываем HTTP-сессию даже при остановке бота с ошибкой.
         await bot.session.close()

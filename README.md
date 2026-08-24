@@ -99,8 +99,9 @@ tests/                           unittest (+ helpers.py — общие загл�
   отдельное фото нельзя заменить или удалить.
 - Статистика заявок — снимок текущих статусов, истории переходов в схеме нет.
 - Нет рассылки по пользователям и блокировки спамеров.
-- Только long polling — webhook отсутствует; в контейнере только БД,
-  Dockerfile для самого бота не написан.
+- Поддерживаются long polling и webhook; режим webhook включается через
+  `WEBHOOK_BASE_URL`.
+- В контейнере только БД, Dockerfile для самого бота не написан.
 - Стратегия бэкапов PostgreSQL (pg_dump по расписанию) не описана;
   юнит-тесты гоняются на SQLite, postgres-специфику они не покрывают.
 
@@ -131,8 +132,24 @@ docker-compose ps                # дождаться статуса healthy
 
 Порт публикуется только на `127.0.0.1`; если на машине уже занят 5432,
 поменяйте `POSTGRES_PORT` в `.env` (например на 5433) — compose и бот
-прочитают его сами. Один процесс бота — один токен: пользовательская часть,
-панель и заявки работают внутри одного long polling.
+прочитают его сами.
+
+Для запуска через webhook задайте в `.env` публичный HTTPS-адрес и секрет:
+
+```dotenv
+WEBHOOK_BASE_URL=https://example.com
+WEBHOOK_PATH=/webhook
+WEBHOOK_SECRET_TOKEN=случайная_строка
+WEB_SERVER_HOST=0.0.0.0
+WEB_SERVER_PORT=8080
+```
+
+После этого тот же `main.py` поднимет HTTP endpoint `WEBHOOK_PATH` и
+зарегистрирует его в Telegram. HTTPS обычно завершается reverse proxy, а на
+порт `WEB_SERVER_PORT` проксируется обычный HTTP-трафик.
+
+Один процесс — один токен: пользовательская часть, панель и заявки работают
+внутри одного бота, второй процесс с polling конфликтует с первым.
 
 ### Как стать администратором
 
@@ -140,7 +157,7 @@ docker-compose ps                # дождаться статуса healthy
 в базе:
 
 ```sql
-UPDATE users SET is_admin = 1 WHERE telegram_id = <ваш_telegram_id>;
+UPDATE users SET is_admin = TRUE WHERE telegram_id = <ваш_telegram_id>;
 ```
 
 ### Данные каталога

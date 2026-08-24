@@ -117,8 +117,9 @@ docker-compose up -d                       # PostgreSQL (контейнер db, 
   в схеме нет); уведомление покупателю шлётся при переходе в «В работе» /
   «Выполнена» / «Отменена» и глушит только `TelegramForbiddenError`.
 - Нет рассылки по пользователям и блокировки спамеров.
-- Только long polling (webhook отсутствует); нет CI (ruff+unittest в GitHub
-  Actions), Dockerfile для бота и стратегии бэкапов Postgres.
+- Поддерживаются long polling и webhook через `WEBHOOK_BASE_URL`; нет CI
+  (ruff+unittest в GitHub Actions), Dockerfile для бота и стратегии бэкапов
+  Postgres.
 
 ## Инструкция для агентов
 
