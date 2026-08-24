@@ -1,0 +1,32 @@
+# PostgreSQL для бота: бот запускается на хосте и подключается через localhost.
+services:
+  db:
+    image: postgres:18-alpine
+    container_name: furniture_db
+    restart: unless-stopped
+    environment:
+      # Реквизиты читаются из .env в корне проекта (единый источник, ADR 0002).
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      # Только loopback: бот на той же машине, наружу Postgres не торчит.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Начиная с образа postgres:18 данные живут прямо здесь
+      # (в подкаталоге), что позволяет pg_upgrade --link без границ маунта.
+      - pgdata:/var/lib/postgresql
+    networks:
+      - furniture-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+
+networks:
+  furniture-net:
+    driver: bridge

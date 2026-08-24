@@ -1,4 +1,5 @@
 import os
+from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 
@@ -24,10 +25,35 @@ except ValueError:
     ) from None
 
 
+# Реквизиты PostgreSQL из .env — единый источник и для бота, и для compose,
+# и для Alembic (ADR 0002). Готовый DATABASE_URL отдельно не заводится.
+postgres_user = os.getenv("POSTGRES_USER", "furniture")
+postgres_password = os.getenv("POSTGRES_PASSWORD", "furniture")
+postgres_db = os.getenv("POSTGRES_DB", "furniture")
+postgres_host = os.getenv("POSTGRES_HOST", "localhost")
+try:
+    postgres_port = int(os.getenv("POSTGRES_PORT", "5432"))
+except ValueError:
+    raise ValueError("POSTGRES_PORT должен быть целым числом!") from None
+
+# Логин и пароль экранируем: в них могут быть символы URL (@, :, /).
+_database_url = (
+    "postgresql+psycopg://"
+    f"{quote_plus(postgres_user)}:{quote_plus(postgres_password)}"
+    f"@{postgres_host}:{postgres_port}/{quote_plus(postgres_db)}"
+)
+
+
 class ConfigBot:
     TOKEN: str = token
     # Флаг is_admin в базе тоже продолжает работать.
     ADMIN_IDS: tuple[int, ...] = admin_ids
+    POSTGRES_USER: str = postgres_user
+    POSTGRES_DB: str = postgres_db
+    POSTGRES_HOST: str = postgres_host
+    POSTGRES_PORT: int = postgres_port
+    # Единый URL для async-движка бота и синхронного движка Alembic.
+    DATABASE_URL: str = _database_url
 
 
 BOT_TOKEN = ConfigBot.TOKEN

@@ -17,6 +17,8 @@ Mako==1.4.1
 MarkupSafe==3.0.3
 multidict==6.7.1
 phonenumbers==9.0.37
+psycopg==3.3.4
+psycopg-binary==3.3.4
 propcache==0.5.2
 pydantic==2.13.4
 pydantic_core==2.46.4
