@@ -34,10 +34,13 @@ def upgrade() -> None:
     """Добавить стандартные категории каталога."""
     connection = op.get_bind()
     for name, description in CATEGORY_ROWS:
+        # ON CONFLICT вместо sqlite-специфичного INSERT OR IGNORE:
+        # синтаксис работает и в PostgreSQL, и в SQLite (с 3.24).
         connection.execute(
             sa.text(
-                "INSERT OR IGNORE INTO categories (name, description, created_at) "
-                "VALUES (:name, :description, CURRENT_TIMESTAMP)"
+                "INSERT INTO categories (name, description, created_at) "
+                "VALUES (:name, :description, CURRENT_TIMESTAMP) "
+                "ON CONFLICT (name) DO NOTHING"
             ),
             {"name": name, "description": description},
         )

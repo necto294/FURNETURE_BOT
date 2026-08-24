@@ -5,10 +5,15 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from database import models  # noqa: F401 - регистрируем модели в metadata
 from database.engine import Base  # Импортируем базовый класс моделей SQLAlchemy
+from settings.config import ConfigBot
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# URL базы берём из .env приложения (ADR 0002): alembic.ini больше не
+# источник реквизитов — и бот, и миграции читают одни и те же переменные.
+config.set_main_option("sqlalchemy.url", ConfigBot.DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

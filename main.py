@@ -1,7 +1,6 @@
 import asyncio
 import logging
 
-from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -9,7 +8,10 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import DeleteWebhook
 from aiogram.types import BotCommand, BotCommandScopeChat
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
+from sqlalchemy import text
 
+from database.engine import async_engine as engine
 from handlers.admin import router as admin_router
 from handlers.backend.order import router as order_router
 from handlers.backend.user import router as user_router
@@ -39,6 +41,33 @@ async def setup_commands(bot: Bot) -> None:
         except TelegramBadRequest:
             # Админ ещё не написал боту — меню команд появится позже.
             continue
+
+
+async def wait_for_database(
+    attempts: int = 30, delay: float = 1.0
+) -> None:
+    """Дождаться готовности PostgreSQL перед запуском polling (ADR 0002).
+
+    Контейнер БД может подниматься дольше бота; ограниченный retry
+    переживает это, но не маскирует ошибки конфигурации — после
+    исчерпания попыток падаем с понятной ошибкой.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            async with engine.connect() as connection:
+                await connection.execute(text("SELECT 1"))
+            return
+        except Exception as error:
+            if attempt == attempts:
+                raise SystemExit(
+                    f"PostgreSQL недоступен после {attempts} попыток "
+                    f"({error}). Проверьте: docker-compose up -d, "
+                    "реквизиты POSTGRES_* в .env."
+                ) from error
+            logger.info(
+                "База ещё не готова (попытка %d/%d), ждём...", attempt, attempts
+            )
+            await asyncio.sleep(delay)
 
 
 async def run_webhook(bot: Bot, dispatcher: Dispatcher) -> None:
@@ -100,6 +129,10 @@ async def main() -> None:
 
     # Регистрируем команды, чтобы /start и /admin были видны в меню Telegram.
     await setup_commands(bot)
+
+    # Не выходим к обновлениям, пока БД не примет соединения:
+    # и polling, и webhook обслуживают хендлеры с обращениями к базе.
+    await wait_for_database()
 
     try:
         if ConfigBot.WEBHOOK_BASE_URL:
