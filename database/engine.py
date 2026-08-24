@@ -1,7 +1,7 @@
 import os
-from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs
 
+from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
 
 # Определяем корневую папку проекта и путь к файлу базы данных.
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
