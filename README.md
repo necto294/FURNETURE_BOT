@@ -96,7 +96,8 @@ tests/                           unittest (+ helpers.py — общие загл�
   отдельное фото нельзя заменить или удалить.
 - Статистика заявок — снимок текущих статусов, истории переходов в схеме нет.
 - Нет рассылки по пользователям и блокировки спамеров.
-- Только long polling — webhook отсутствует.
+- Поддерживаются long polling и webhook; режим webhook включается через
+  `WEBHOOK_BASE_URL`.
 - Нет CI (ruff + unittest в GitHub Actions), Dockerfile и стратегии бэкапа SQLite.
 
 ## Инструкция
@@ -115,6 +116,20 @@ cp .env.example .env             # затем заполните:
 ./venv/bin/alembic upgrade head  # создать схему и сид категорий
 ./venv/bin/python main.py        # запуск (long polling)
 ```
+
+Для запуска через webhook задайте в `.env` публичный HTTPS-адрес и секрет:
+
+```dotenv
+WEBHOOK_BASE_URL=https://example.com
+WEBHOOK_PATH=/webhook
+WEBHOOK_SECRET_TOKEN=случайная_строка
+WEB_SERVER_HOST=0.0.0.0
+WEB_SERVER_PORT=8080
+```
+
+После этого тот же `main.py` поднимет HTTP endpoint `WEBHOOK_PATH` и
+зарегистрирует его в Telegram. HTTPS обычно завершается reverse proxy, а на
+порт `WEB_SERVER_PORT` проксируется обычный HTTP-трафик.
 
 Один процесс — один токен: пользовательская часть, панель и заявки работают
 внутри одного бота, второй процесс с polling конфликтует с первым.

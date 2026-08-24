@@ -107,8 +107,8 @@
   в схеме нет); уведомление покупателю шлётся при переходе в «В работе» /
   «Выполнена» / «Отменена» и глушит только `TelegramForbiddenError`.
 - Нет рассылки по пользователям и блокировки спамеров.
-- Только long polling (webhook отсутствует); нет CI (ruff+unittest в GitHub
-  Actions), Dockerfile и стратегии бэкапа SQLite.
+- Поддерживаются long polling и webhook через `WEBHOOK_BASE_URL`; нет CI
+  (ruff+unittest в GitHub Actions), Dockerfile и стратегии бэкапа SQLite.
 
 ## Инструкция для агентов
 

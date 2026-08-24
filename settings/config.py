@@ -28,6 +28,11 @@ class ConfigBot:
     TOKEN: str = token
     # Флаг is_admin в базе тоже продолжает работать.
     ADMIN_IDS: tuple[int, ...] = admin_ids
+    WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")
+    WEBHOOK_PATH: str = os.getenv("WEBHOOK_PATH", "/webhook")
+    WEBHOOK_SECRET_TOKEN: str = os.getenv("WEBHOOK_SECRET_TOKEN", "")
+    WEB_SERVER_HOST: str = os.getenv("WEB_SERVER_HOST", "0.0.0.0")
+    WEB_SERVER_PORT: int = int(os.getenv("WEB_SERVER_PORT", "8080"))
 
 
 BOT_TOKEN = ConfigBot.TOKEN
