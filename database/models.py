@@ -1,7 +1,15 @@
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import relationship
 
 from .engine import Base
@@ -12,7 +20,9 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
-    telegram_id = Column(Integer, unique=True, index=True, nullable=False)
+    # telegram_id — 64-битный идентификатор Telegram; Postgres INTEGER (32 бита)
+    # переполняется на больших ID — только BIGINT/Integer64 вмещает любой валидный.
+    telegram_id = Column(BigInteger, unique=True, index=True, nullable=False)
     username = Column(String, unique=True, index=True)
     first_name = Column(String)
     last_name = Column(String)

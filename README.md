@@ -69,7 +69,7 @@ database/crud_catalog.py         CRUD: категории, товары, под�
 database/crud_orders.py          CRUD заявок (списки, статусы, экспорт)
 database/crud.py                 фасад-реэкспорт обоих CRUD
 database/engine.py               асинхронный движок (URL из .env)
-alembic/                         миграции (актуальная голова: e9f4b8c2d6a7)
+alembic/                         миграции (актуальная голова: ecb821d8dbe4)
 states/states.py                 состояния FSM каталога и админ-панели
 utils/phone.py                   нормализация телефонов в E.164
 docs/adr/0001-phone-normalization.md   правила работы с номерами
@@ -185,7 +185,7 @@ alembic upgrade head
 Уже применённые миграции не редактируются — новая схема оформляется новой
 ревизией. Цепочка: `9c3e2a1b7d4f` (сид категорий) → `f8b2d4c6a9e1` (контакты
 товара) → `c4d9e7f2a8b3` (имя/телефон покупателя и таблица `orders`) →
-`e9f4b8c2d6a7` (цена товара).
+`e9f4b8c2d6a7` (цена товара) → `ecb821d8dbe4` (users.telegram_id → BIGINT).
 
 ### Проверка проекта
 

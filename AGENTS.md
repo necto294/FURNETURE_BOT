@@ -34,7 +34,9 @@ docker-compose up -d                       # PostgreSQL (контейнер db, 
   Актуальная цепочка: `9c3e2a1b7d4f` (сид категорий) → `f8b2d4c6a9e1`
   (контакты товара) → `c4d9e7f2a8b3` (имя/телефон покупателя; **эта же ревизия
   создаёт саму таблицу `orders`** — в старых её не было, ревизия устойчива
-  к обоим состояниям базы) → `e9f4b8c2d6a7` (цена товара).
+  к обоим состояниям базы) → `e9f4b8c2d6a7` (цена товара) →
+  `ecb821d8dbe4` (users.telegram_id → BIGINT; без этого любой большой
+  Telegram ID падал на Postgres с NumericValueOutOfRange, SQLite это не ловит).
 - **БД — PostgreSQL из compose**, URL собирается в `settings/config.py` из
   `POSTGRES_*`; `main.py` перед polling ждёт готовность БД ограниченным
   retry (`wait_for_database`, 30×1с). Порт публикуется только на loopback;
@@ -101,6 +103,11 @@ docker-compose up -d                       # PostgreSQL (контейнер db, 
   вызова — тесты подменяют именно `engine.AsyncSessionLocal` временной
   временной SQLite-базой (aiosqlite — только тесты; единая точка патча
   для обеих половин);
+  SQLite использует динамическую типизацию и НЕ ловит поломки типов
+  Postgres (например переполнение INTEGER на big telegram_id) — такие
+  регрессии покрыты в `tests/test_telegram_id_bigint.py`, который гоняет
+  CRUD на изолированной throwaway-базе PostgreSQL и пропускается, если
+  Postgres недоступен;
   aiogram-объекты — `SimpleNamespace` + `AsyncMock`. Для обхода
   `isinstance(message, Message)` — трюк `_AnyMessage` (метакласс); помни,
   что патчить надо `Message` в том модуле, где хендлер его импортировал.
