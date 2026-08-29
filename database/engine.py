@@ -3,8 +3,8 @@ from sqlalchemy.orm import DeclarativeBase
 
 from settings.config import ConfigBot
 
-# URL собирается из разложенных переменных .env (ADR 0002):
-# PostgreSQL в Docker Compose, бот подключается через localhost.
+# URL собирается в settings/config из DATABASE_PATH (.env): SQLite-файл,
+# доступный через aiosqlite и боту, и синхронному Alembic (ADR 0004).
 DATABASE_URL = ConfigBot.DATABASE_URL
 
 

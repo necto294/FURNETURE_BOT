@@ -1,8 +1,7 @@
 # AGENTS.md
 
-Мебельный Telegram-бот на aiogram 3 + SQLAlchemy 2 + PostgreSQL 18 в
-Docker Compose (psycopg v3; детали — ADR 0002). Подробный
-обзор возможностей — в `README.md`.
+Мебельный Telegram-бот на aiogram 3 + SQLAlchemy 2 (async SQLite/aiosqlite;
+детали — ADR 0004). Подробный обзор возможностей — в `README.md`.
 
 ## Команды
 
@@ -10,10 +9,9 @@ Docker Compose (psycopg v3; детали — ADR 0002). Подробный
 
 ```bash
 ./venv/bin/python main.py                  # запуск бота (long polling)
-docker-compose up -d                       # PostgreSQL (контейнер db, volume pgdata)
 ./venv/bin/python -m unittest discover -s tests   # тесты (stdlib unittest, не pytest)
 ./venv/bin/ruff check .                    # линтер (конфига нет — дефолты ruff)
-./venv/bin/alembic upgrade head            # миграции (URL из POSTGRES_* в .env)
+./venv/bin/alembic upgrade head            # миграции (SQLite из DATABASE_PATH в .env)
 ```
 
 Перед коммитом: `compileall` по пакетам, `pip check`, тесты.
@@ -28,19 +26,13 @@ docker-compose up -d                       # PostgreSQL (контейнер db, 
 - Глобальный `ParseMode.HTML`: экранируй пользовательский ввод через
   `html.escape`.
 - **Миграции не редактировать после применения** — новая схема = новая ревизия.
-  Исключение (ADR 0002): сид `9c3e2a1b7d4f` правился до первого прогона на
-  Postgres (`INSERT OR IGNORE` → `ON CONFLICT`), SQLite-архив от этого
-  отошёл — осознанно.
-  Актуальная цепочка: `9c3e2a1b7d4f` (сид категорий) → `f8b2d4c6a9e1`
-  (контакты товара) → `c4d9e7f2a8b3` (имя/телефон покупателя; **эта же ревизия
-  создаёт саму таблицу `orders`** — в старых её не было, ревизия устойчива
-  к обоим состояниям базы) → `e9f4b8c2d6a7` (цена товара) →
-  `ecb821d8dbe4` (users.telegram_id → BIGINT; без этого любой большой
-  Telegram ID падал на Postgres с NumericValueOutOfRange, SQLite это не ловит).
-- **БД — PostgreSQL из compose**, URL собирается в `settings/config.py` из
-  `POSTGRES_*`; `main.py` перед polling ждёт готовность БД ограниченным
-  retry (`wait_for_database`, 30×1с). Порт публикуется только на loopback;
-  на машине разработчика занят 5432 — используется `POSTGRES_PORT=5433`.
+  Актуальная цепочка: единственная начальная ревизия `d86de4abbf3e` (вся
+  схема из `models.py` + сид категорий; ADR 0004).
+- **БД — SQLite-файл** из `DATABASE_PATH` в `.env` (`settings/config.py`):
+  async-URL (`sqlite+aiosqlite://`) для бота, sync-URL (`sqlite://`) для
+  Alembic (`ConfigBot.SYNC_DATABASE_URL`; aiosqlite не годится для sync-
+  движка миграций). Файл автоматически создаётся при первом подключении,
+  ожидание готовности не нужно.
 - **CRUD возвращает отсоединённые объекты**: сессия закрывается на выходе,
   поэтому связи нужно грузить сразу (`selectinload`) внутри функции — ленивая
   загрузка после возврата падает с `DetachedInstanceError`. `refresh()` связи
@@ -101,13 +93,8 @@ docker-compose up -d                       # PostgreSQL (контейнер db, 
   `database/crud.py` — фасад-реэкспорт, внешние импорты идут через него.
   Обе половины берут сессию как `engine.AsyncSessionLocal()` в момент
   вызова — тесты подменяют именно `engine.AsyncSessionLocal` временной
-  временной SQLite-базой (aiosqlite — только тесты; единая точка патча
-  для обеих половин);
-  SQLite использует динамическую типизацию и НЕ ловит поломки типов
-  Postgres (например переполнение INTEGER на big telegram_id) — такие
-  регрессии покрыты в `tests/test_telegram_id_bigint.py`, который гоняет
-  CRUD на изолированной throwaway-базе PostgreSQL и пропускается, если
-  Postgres недоступен;
+  SQLite-базой (aiosqlite — только тесты; единая точка патча
+  для обеих половин).
   aiogram-объекты — `SimpleNamespace` + `AsyncMock`. Для обхода
   `isinstance(message, Message)` — трюк `_AnyMessage` (метакласс); помни,
   что патчить надо `Message` в том модуле, где хендлер его импортировал.
@@ -125,8 +112,8 @@ docker-compose up -d                       # PostgreSQL (контейнер db, 
   «Выполнена» / «Отменена» и глушит только `TelegramForbiddenError`.
 - Нет рассылки по пользователям и блокировки спамеров.
 - Поддерживаются long polling и webhook через `WEBHOOK_BASE_URL`; нет CI
-  (ruff+unittest в GitHub Actions), Dockerfile для бота и стратегии бэкапов
-  Postgres.
+  (ruff+unittest в GitHub Actions), Dockerfile и стратегии бэкапов.
+  Бэкап БД сводится к копированию SQLite-файла (ADR 0004).
 
 ## Инструкция для агентов
 

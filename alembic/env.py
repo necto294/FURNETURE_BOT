@@ -11,9 +11,10 @@ from settings.config import ConfigBot
 # access to the values within the .ini file in use.
 config = context.config
 
-# URL базы берём из .env приложения (ADR 0002): alembic.ini больше не
-# источник реквизитов — и бот, и миграции читают одни и те же переменные.
-config.set_main_option("sqlalchemy.url", ConfigBot.DATABASE_URL)
+# URL базы берём из .env приложения (ADR 0004): alembic.ini больше не
+# источник реквизитов. Для SQLite берём sync-URL — aiosqlite (async) не
+# подходит для sync-движка миграций.
+config.set_main_option("sqlalchemy.url", ConfigBot.SYNC_DATABASE_URL)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
