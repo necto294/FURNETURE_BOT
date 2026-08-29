@@ -43,9 +43,8 @@ Telegram-бот-каталог мебели: покупатель смотрит
 ## Структура проекта
 
 ```text
-main.py                          запуск бота, проба БД, сборка диспетчера
-compose.yaml                     PostgreSQL 18 в Docker (volume, сеть, healthcheck)
-settings/config.py               BOT_TOKEN/ADMIN_ID и POSTGRES_* из .env
+main.py                          запуск бота и сборка диспетчера
+settings/config.py               BOT_TOKEN/ADMIN_ID и DATABASE_PATH из .env
 handlers/
   backend/user/router.py         каталог покупателя (меню, фильтры, карточка)
   backend/user/views.py          формирование сообщений каталога
@@ -69,7 +68,7 @@ database/crud_catalog.py         CRUD: категории, товары, под�
 database/crud_orders.py          CRUD заявок (списки, статусы, экспорт)
 database/crud.py                 фасад-реэкспорт обоих CRUD
 database/engine.py               асинхронный движок (URL из .env)
-alembic/                         миграции (актуальная голова: ecb821d8dbe4)
+alembic/                         миграции (единственная начальная ревизия d86de4)
 states/states.py                 состояния FSM каталога и админ-панели
 utils/phone.py                   нормализация телефонов в E.164
 docs/adr/0001-phone-normalization.md   правила работы с номерами
@@ -84,9 +83,7 @@ tests/                           unittest (+ helpers.py — общие загл�
 
 - Python 3.12+
 - aiogram 3 — бот-фреймворк (long polling, FSM на контексте)
-- PostgreSQL 18 в Docker Compose — хранение данных; драйвер `psycopg` v3
-  (асинхронно для бота, синхронно для Alembic)
-- SQLAlchemy 2 (async) — ORM
+- SQLAlchemy 2 (async) — ORM; доступ к SQLite через aiosqlite без блокировок
 - Alembic — миграции схемы
 - phonenumbers — парсинг и нормализация телефонов
 - python-dotenv — конфигурация через `.env`
@@ -101,9 +98,8 @@ tests/                           unittest (+ helpers.py — общие загл�
 - Нет рассылки по пользователям и блокировки спамеров.
 - Поддерживаются long polling и webhook; режим webhook включается через
   `WEBHOOK_BASE_URL`.
-- В контейнере только БД, Dockerfile для самого бота не написан.
-- Стратегия бэкапов PostgreSQL (pg_dump по расписанию) не описана;
-  юнит-тесты гоняются на SQLite, postgres-специфику они не покрывают.
+- Нет CI (ruff + unittest в GitHub Actions), Dockerfile и стратегии бэкапов.
+  Бэкап БД сводится к копированию одного SQLite-файла (ADR 0004).
 
 ## Инструкция
 
@@ -117,22 +113,14 @@ pip install -r requirements.txt
 cp .env.example .env             # затем заполните:
 # BOT_TOKEN=токен_бота
 # ADMIN_ID=ваш_telegram_id       # можно несколько через запятую
-# POSTGRES_USER/PASSWORD/DB/HOST/PORT — реквизиты БД (ADR 0002)
+# DATABASE_PATH=database/database.db   # путь к SQLite-файлу (ADR 0004)
 
-# 1. Поднять PostgreSQL (контейнер db, volume pgdata, healthcheck).
-docker-compose up -d
-docker-compose ps                # дождаться статуса healthy
-
-# 2. Накатить схему и сид-категории.
-./venv/bin/alembic upgrade head
-
-# 3. Запустить бота; он сам дождётся готовности БД (retry до 30 секунд).
-./venv/bin/python main.py
+./venv/bin/alembic upgrade head  # создать схему и сид категорий
+./venv/bin/python main.py        # запуск (long polling)
 ```
 
-Порт публикуется только на `127.0.0.1`; если на машине уже занят 5432,
-поменяйте `POSTGRES_PORT` в `.env` (например на 5433) — compose и бот
-прочитают его сами.
+Файл базы и папка `database/` создаются автоматически при первом запуске;
+настраиваются через `DATABASE_PATH` в `.env` (относительно корня проекта).
 
 Для запуска через webhook задайте в `.env` публичный HTTPS-адрес и секрет:
 
@@ -170,12 +158,12 @@ UPDATE users SET is_admin = TRUE WHERE telegram_id = <ваш_telegram_id>;
   в фильтрах сами; для пустой базы гарантированы `Россия`/`Турция` и
   `Прямая`/`Угловая`.
 - Фотографии хранятся в `furniture_photos` по Telegram `file_id`.
-- Стандартные категории добавляет миграция `9c3e2a1b7d4f`.
+- Стандартные категории добавляет начальная миграция `d86de4abbf3e`.
 
 ### База данных и миграции
 
-Данные живут в PostgreSQL из `compose.yaml` (volume `pgdata`); реквизиты —
-в `.env`. После изменения моделей:
+Данные — в SQLite-файле из `DATABASE_PATH` в `.env` (по умолчанию
+`database/database.db`). После изменения моделей:
 
 ```bash
 alembic revision --autogenerate -m "Описание изменения"
@@ -183,9 +171,8 @@ alembic upgrade head
 ```
 
 Уже применённые миграции не редактируются — новая схема оформляется новой
-ревизией. Цепочка: `9c3e2a1b7d4f` (сид категорий) → `f8b2d4c6a9e1` (контакты
-товара) → `c4d9e7f2a8b3` (имя/телефон покупателя и таблица `orders`) →
-`e9f4b8c2d6a7` (цена товара) → `ecb821d8dbe4` (users.telegram_id → BIGINT).
+ревизией. Единственная начальная ревизия `d86de4abbf3e` создаёт всю схему
+из `models.py` и сид категорий (ADR 0004).
 
 ### Проверка проекта
 

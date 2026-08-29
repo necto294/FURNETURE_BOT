@@ -1,5 +1,5 @@
 import os
-from urllib.parse import quote_plus
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -25,35 +25,31 @@ except ValueError:
     ) from None
 
 
-# Реквизиты PostgreSQL из .env — единый источник и для бота, и для compose,
-# и для Alembic (ADR 0002). Готовый DATABASE_URL отдельно не заводится.
-postgres_user = os.getenv("POSTGRES_USER", "furniture")
-postgres_password = os.getenv("POSTGRES_PASSWORD", "furniture")
-postgres_db = os.getenv("POSTGRES_DB", "furniture")
-postgres_host = os.getenv("POSTGRES_HOST", "localhost")
-try:
-    postgres_port = int(os.getenv("POSTGRES_PORT", "5432"))
-except ValueError:
-    raise ValueError("POSTGRES_PORT должен быть целым числом!") from None
-
-# Логин и пароль экранируем: в них могут быть символы URL (@, :, /).
-_database_url = (
-    "postgresql+psycopg://"
-    f"{quote_plus(postgres_user)}:{quote_plus(postgres_password)}"
-    f"@{postgres_host}:{postgres_port}/{quote_plus(postgres_db)}"
-)
+# Путь к файлу SQLite берётся из .env (ADR 0004). Относительный путь
+# считается от корня проекта; родительская директория создаётся при первом
+# подключении. Единый источник и для бота, и для Alembic.
+_raw_db_path = os.getenv("DATABASE_PATH", "database/database.db")
+_db_path = Path(_raw_db_path)
+if not _db_path.is_absolute():
+    _db_path = Path(__file__).resolve().parent.parent / _db_path
+_db_path.parent.mkdir(parents=True, exist_ok=True)
+_database_path = str(_db_path)
+_database_url = f"sqlite+aiosqlite:///{_database_path}"
+# Синхронный URL для Alembic: тот же файл, но через стандартный sync-драйвер
+# (aiosqlite — только async; sync-движок миграций не умеет в greenlet).
+_sync_database_url = f"sqlite:///{_database_path}"
 
 
 class ConfigBot:
     TOKEN: str = token
     # Флаг is_admin в базе тоже продолжает работать.
     ADMIN_IDS: tuple[int, ...] = admin_ids
-    POSTGRES_USER: str = postgres_user
-    POSTGRES_DB: str = postgres_db
-    POSTGRES_HOST: str = postgres_host
-    POSTGRES_PORT: int = postgres_port
+    # Путь до SQLite-файла и собранные URL (async-движок бота и sync-Alembic).
+    DATABASE_PATH: str = _database_path
     # Единый URL для async-движка бота и синхронного движка Alembic.
     DATABASE_URL: str = _database_url
+    # Синхронный URL (sqlite://) — только для Alembic, см. env.py.
+    SYNC_DATABASE_URL: str = _sync_database_url
     # Webhook-режим включается только при заданном WEBHOOK_BASE_URL,
     # иначе бот работает через long polling.
     WEBHOOK_BASE_URL: str = os.getenv("WEBHOOK_BASE_URL", "").rstrip("/")

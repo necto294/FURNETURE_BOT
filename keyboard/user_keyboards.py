@@ -64,21 +64,36 @@ def empty_catalog_menu() -> InlineKeyboardMarkup:
     )
 
 
-def filter_menu(
-    category_key: str,
-    filter_type: str,
-    values: list[str],
-) -> InlineKeyboardMarkup:
-    """Построить подкатегории из значений, полученных из базы данных."""
-    # Каждое значение из базы превращается в отдельную кнопку фильтра.
+def subcategory_menu(category_key: str, values: list[str]) -> InlineKeyboardMarkup:
+    """Выбор подкатегории: после него открывается шаг страны."""
     rows = []
     for value in values:
-        icon = "🇷🇺" if value == "Россия" else "🇹🇷" if value == "Турция" else "📐"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"📐 {value}",
+                    callback_data=f"filtersub:{category_key}:{value}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")])
+    return _keyboard(rows)
+
+
+def country_menu(
+    category_key: str,
+    countries: list[str],
+    subcategory: str = "",
+) -> InlineKeyboardMarkup:
+    """Выбор страны; подкатегория (если выбрана) вшита в кнопку для фильтра."""
+    rows = []
+    for value in countries:
+        icon = "🇷🇺" if value == "Россия" else "🇹🇷" if value == "Турция" else "🌍"
         rows.append(
             [
                 InlineKeyboardButton(
                     text=f"{icon} {value}",
-                    callback_data=f"filter:{category_key}:{filter_type}:{value}",
+                    callback_data=f"country:{category_key}:{subcategory}:{value}",
                 )
             ]
         )
@@ -89,8 +104,8 @@ def filter_menu(
 def products_menu(
     products: list,
     category_key: str,
-    filter_type: str | None = None,
-    filter_value: str | None = None,
+    subcategory: str = "",
+    country: str = "",
     page: int = 0,
     total: int = 0,
 ) -> InlineKeyboardMarkup:
@@ -100,7 +115,7 @@ def products_menu(
             InlineKeyboardButton(
                 text=product.name,
                 callback_data=(
-                    f"product:{product.id}:{category_key}:{filter_type or ''}:{filter_value or ''}:{page}"
+                    f"product:{product.id}:{category_key}:{subcategory}:{country}:{page}"
                 ),
             )
         ]
@@ -112,7 +127,7 @@ def products_menu(
         navigation.append(
             InlineKeyboardButton(
                 text="◀️",
-                callback_data=f"page:{category_key}:{page - 1}:{filter_type or ''}:{filter_value or ''}",
+                callback_data=f"page:{category_key}:{page - 1}:{subcategory}:{country}",
             )
         )
     navigation.append(InlineKeyboardButton(text=f"{page + 1}/{total_pages}", callback_data="noop"))
@@ -120,7 +135,7 @@ def products_menu(
         navigation.append(
             InlineKeyboardButton(
                 text="▶️",
-                callback_data=f"page:{category_key}:{page + 1}:{filter_type or ''}:{filter_value or ''}",
+                callback_data=f"page:{category_key}:{page + 1}:{subcategory}:{country}",
             )
         )
     if navigation:
@@ -132,8 +147,8 @@ def products_menu(
 def product_menu(
     product_id: int,
     category_key: str,
-    filter_type: str | None,
-    filter_value: str | None,
+    subcategory: str = "",
+    country: str = "",
     page: int = 0,
 ) -> InlineKeyboardMarkup:
     rows = [
@@ -141,7 +156,7 @@ def product_menu(
             InlineKeyboardButton(
                 text="◀️ К списку товаров",
                 callback_data=(
-                    f"page:{category_key}:{page}:{filter_type or ''}:{filter_value or ''}"
+                    f"page:{category_key}:{page}:{subcategory}:{country}"
                 ),
             )
         ]

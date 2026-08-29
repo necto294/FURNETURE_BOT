@@ -80,6 +80,18 @@ class UpsertUserTests(unittest.IsolatedAsyncioTestCase):
         second = await crud.upsert_user(telegram_id=2002, username=None, first_name="B")
         self.assertNotEqual(first.id, second.id)
 
+    async def test_large_telegram_id_roundtrips(self) -> None:
+        # Telegram ID — 64-битный; SQLite (в отличие от Postgres INTEGER) хранит
+        # его без переполнения. Регрессия на случай возврата к типизированной СУБД.
+        large = 5867235263
+        user = await crud.upsert_user(
+            telegram_id=large, username="large", first_name="Большой"
+        )
+        self.assertEqual(user.telegram_id, large)
+        stored = await crud.get_user_by_telegram_id(large)
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored.telegram_id, large)
+
 
 class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_start_registers_telegram_user(self) -> None:

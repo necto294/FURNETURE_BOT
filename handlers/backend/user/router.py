@@ -5,15 +5,17 @@ from aiogram.types import CallbackQuery, InputMediaPhoto, MediaUnion, Message
 from database.crud import (
     get_categories,
     get_category_by_id,
+    get_country_values,
     get_filter_values,
     get_furniture_by_id,
     upsert_user,
 )
 from keyboard.user_keyboards import (
     CATEGORY_CONFIG,
-    filter_menu,
+    country_menu,
     main_menu,
     product_menu,
+    subcategory_menu,
 )
 
 from .formatters import build_product_card
@@ -38,7 +40,6 @@ async def start_handler(message: Message) -> None:
 
 @router.callback_query(F.data.startswith("category:"))
 async def category_handler(callback: CallbackQuery) -> None:
-    # Категория либо открывает фильтр, либо сразу загружает список товаров.
     if not isinstance(callback.message, Message) or callback.data is None:
         return
 
@@ -53,43 +54,61 @@ async def category_handler(callback: CallbackQuery) -> None:
         (key for key, (name, _) in CATEGORY_CONFIG.items() if name == category_name),
         category_name,
     )
-    _, filter_type = CATEGORY_CONFIG.get(category_key, (category_name, None))
 
-    if filter_type == "country":
-        # Страны показываются только если они есть у товаров этой категории.
-        values = await get_filter_values(category_name, filter_type)
-        if values:
-            await callback.message.edit_text(
-                f"{category_name}\n\nВыберите страну производства из каталога:",
-                reply_markup=filter_menu(category_key, filter_type, values),
-            )
-        else:
-            await show_products(callback, category_key)
-    elif filter_type == "subcategory":
-        # Подкатегории также формируются из фактических записей каталога.
-        values = await get_filter_values(category_name, filter_type)
-        if values:
-            await callback.message.edit_text(
-                f"{category_name}\n\nВыберите тип кухни из каталога:",
-                reply_markup=filter_menu(category_key, filter_type, values),
-            )
-        else:
-            await show_products(callback, category_key)
-    else:
-        await show_products(callback, category_key)
-
-    await callback.answer()
-
-
-@router.callback_query(F.data.startswith("filter:"))
-async def filter_handler(callback: CallbackQuery) -> None:
-    if callback.data is None:
+    # Шаг 1: подкатегории — показываем только если они реально есть у товаров.
+    subcategories = await get_filter_values(category_name, "subcategory")
+    if subcategories:
+        await callback.message.edit_text(
+            f"{category_name}\n\nВыберите подкатегорию из каталога:",
+            reply_markup=subcategory_menu(category_key, subcategories),
+        )
+        await callback.answer()
         return
 
-    # Сразу закрываем индикатор Telegram перед запросом к базе.
+    # Шаг 2: страна. Обязательный шаг, если у категории есть товары со странами.
+    countries = await get_country_values(category_name)
+    if countries:
+        await callback.message.edit_text(
+            f"{category_name}\n\nВыберите страну производства из каталога:",
+            reply_markup=country_menu(category_key, countries),
+        )
+        await callback.answer()
+        return
+
+    # Нет ни подкатегорий, ни стран — сразу показываем товары.
+    await show_products(callback, category_key)
     await callback.answer()
-    _, category_key, filter_type, filter_value = callback.data.split(":", 3)
-    await show_products(callback, category_key, filter_type, filter_value)
+
+
+@router.callback_query(F.data.startswith("filtersub:"))
+async def subcategory_handler(callback: CallbackQuery) -> None:
+    # Выбрана подкатегория: показываем страны, доступные именно в ней.
+    if not isinstance(callback.message, Message) or callback.data is None:
+        return
+    await callback.answer()
+
+    _, category_key, subcategory = callback.data.split(":", 2)
+    category_name, _ = CATEGORY_CONFIG.get(category_key, (category_key, None))
+    countries = await get_country_values(category_name, subcategory)
+    if countries:
+        await callback.message.edit_text(
+            f"{category_name}\n\nВыберите страну производства из каталога:",
+            reply_markup=country_menu(category_key, countries, subcategory),
+        )
+        return
+
+    # В выбранной подкатегории стран нет — показываем её товары напрямую.
+    await show_products(callback, category_key, subcategory=subcategory)
+
+
+@router.callback_query(F.data.startswith("country:"))
+async def country_handler(callback: CallbackQuery) -> None:
+    if not isinstance(callback.message, Message) or callback.data is None:
+        return
+    await callback.answer()
+
+    _, category_key, subcategory, country = callback.data.split(":", 3)
+    await show_products(callback, category_key, subcategory=subcategory, country=country)
 
 
 @router.callback_query(F.data.startswith("page:"))
@@ -98,13 +117,13 @@ async def page_handler(callback: CallbackQuery) -> None:
         return
 
     await callback.answer()
-    _, category_key, page, filter_type, filter_value = callback.data.split(":", 4)
+    _, category_key, page, subcategory, country = callback.data.split(":", 4)
     await show_products(
         callback,
         category_key,
-        filter_type or None,
-        filter_value or None,
-        int(page),
+        subcategory=subcategory,
+        country=country,
+        page=int(page),
     )
 
 
@@ -119,7 +138,7 @@ async def product_handler(callback: CallbackQuery) -> None:
     if not isinstance(callback.message, Message) or callback.data is None:
         return
 
-    _, product_id, category_key, filter_type, filter_value, page = callback.data.split(":", 5)
+    _, product_id, category_key, subcategory, country, page = callback.data.split(":", 5)
     product = await get_furniture_by_id(int(product_id))
 
     if product is None:
@@ -141,8 +160,8 @@ async def product_handler(callback: CallbackQuery) -> None:
         reply_markup=product_menu(
             product.id,
             category_key,
-            filter_type or None,
-            filter_value or None,
+            subcategory,
+            country,
             int(page),
         ),
     )
