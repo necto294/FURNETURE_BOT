@@ -150,6 +150,38 @@ async def get_filter_values(category_name: str, filter_type: str) -> list[str]:
     return sorted(values)
 
 
+async def get_country_values(
+    category_name: str, subcategory: str | None = None
+) -> list[str]:
+    """Вернуть страны каталога, доступные товарам категории.
+
+    При переданной подкатегории список сужается до стран, у которых в этой
+    подкатегории есть товары, — пустой выбор исключается (ADR/UX 2026).
+    """
+    query = (
+        select(Furniture.country)
+        .where(
+            Furniture.category_name == category_name,
+            Furniture.country.is_not(None),
+        )
+        .distinct()
+        .order_by(Furniture.country)
+    )
+    if subcategory is not None:
+        query = query.where(Furniture.subcategory == subcategory)
+
+    async with engine.AsyncSessionLocal() as session:
+        result = await session.execute(query)
+        values = [str(value) for value in result.scalars().all()]
+
+    # Гарантированные страны добавляем только для всего каталога категории;
+    # для суженного подкатегорией списка это создало бы «пустые» варианты.
+    if subcategory is None:
+        values.extend(country for country in REQUIRED_COUNTRIES if country not in values)
+
+    return sorted(values)
+
+
 async def get_furniture_by_id(furniture_id: int) -> Furniture | None:
     """Вернуть товар вместе с фотографиями."""
     query = (

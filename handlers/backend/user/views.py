@@ -16,8 +16,8 @@ from .texts import HTML_SEPARATOR
 async def show_products(
     callback: CallbackQuery,
     category_key: str,
-    filter_type: str | None = None,
-    filter_value: str | None = None,
+    subcategory: str = "",
+    country: str = "",
     page: int = 0,
 ) -> None:
     if not isinstance(callback.message, Message):
@@ -27,8 +27,8 @@ async def show_products(
     products, total = await get_furniture_page(
         category_name=category_name,
         page=page,
-        country=filter_value if filter_type == "country" else None,
-        subcategory=filter_value if filter_type == "subcategory" else None,
+        country=country or None,
+        subcategory=subcategory or None,
     )
 
     if products:
@@ -38,15 +38,15 @@ async def show_products(
             f"Показано {len(products)} из {total} товаров в категории.\n\n"
             "Выберите товар:"
         )
-        keyboard = products_menu(products, category_key, filter_type, filter_value, page, total)
+        keyboard = products_menu(products, category_key, subcategory, country, page, total)
     else:
         # Пустой результат оформляем как отдельное состояние каталога.
         category_icon = CATEGORY_ICONS.get(category_key, "🪑")
-        if filter_value:
+        if country:
             text = (
                 f"<b>{category_icon} {escape(category_name)}</b>\n"
                 f"{HTML_SEPARATOR}\n\n"
-                f"<i>По фильтру «{escape(str(filter_value))}» товаров пока нет.</i>\n\n"
+                f"<i>По фильтру «{escape(str(country))}» товаров пока нет.</i>\n\n"
                 "Попробуйте выбрать другой вариант или вернитесь в каталог."
             )
         else:
