@@ -104,11 +104,14 @@ class DeleteFurnitureListTests(helpers.TempDbMixin, unittest.IsolatedAsyncioTest
 
 
 class SubcategoryViewTests(helpers.TempDbMixin, unittest.IsolatedAsyncioTestCase):
-    async def test_kitchen_shows_guaranteed_types_without_products(self) -> None:
-        # Регрессия: у пустой кухни должны быть видны «Прямая» и «Угловая».
+    async def test_kitchen_shows_subcategories_and_add(self) -> None:
+        # Подкатегории кухни видны в списке панели (в проде сидятся миграцией),
+        # рядом всегда есть кнопка добавления.
         from handlers.admin.subcategories import subcategory_list
 
         category = await crud.create_category("Кухонная мебель")
+        await crud.create_subcategory(category.id, "Прямая")
+        await crud.create_subcategory(category.id, "Угловая")
         callback = helpers.make_admin_event(f"adm:subcat:{category.id}")
 
         with helpers.patch_admin_message():
@@ -120,6 +123,7 @@ class SubcategoryViewTests(helpers.TempDbMixin, unittest.IsolatedAsyncioTestCase
         ]
         self.assertIn("Прямая (0)", buttons)
         self.assertIn("Угловая (0)", buttons)
+        self.assertIn("➕ Добавить подкатегорию", buttons)
 
 
 class PriceStepTests(unittest.IsolatedAsyncioTestCase):

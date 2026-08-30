@@ -35,8 +35,8 @@ def _admin_welcome_text(first_name: str | None) -> str:
         "🗑 <b>Удалить товар</b> — выберите категорию, затем товар из списка.\n\n"
         "➕ <b>Добавить категорию</b> — новый раздел главного меню каталога.\n\n"
         "❌ <b>Удалить категорию</b> — удалит её вместе со всеми товарами!\n\n"
-        "🧩 <b>Подкатегории</b> — просмотр и удаление меток у товаров;\n"
-        "новая подкатегория создаётся сама при вводе своего типа текстом.\n\n"
+        "🧩 <b>Подкатегории</b> — добавление и удаление подкатегорий;\n"
+        "удалённая прячется в раздел «Остальные», товары не теряются.\n\n"
         "📨 <b>Заявки</b> — список заказов с именем, телефоном и сменой статуса.\n\n"
         "🛎 Каждая подтверждённая заявка придёт вам сообщением.\n\n"
         "⚠️ Удаление необратимо, поэтому панель всегда переспрашивает.\n"
@@ -58,11 +58,6 @@ def _category_key(category_name: str) -> str:
         (key for key, (name, _) in CATEGORY_CONFIG.items() if name == category_name),
         category_name,
     )
-
-
-def _filter_type(category_name: str) -> str | None:
-    """Тип фильтра категории: country, subcategory или None."""
-    return CATEGORY_CONFIG.get(_category_key(category_name), (category_name, None))[1]
 
 
 async def _show_categories_for(callback: CallbackQuery, action_prefix: str) -> None:

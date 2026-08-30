@@ -7,11 +7,46 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from database import engine
-from database.models import Category, Furniture, FurniturePhoto, User
+from database.models import Category, Furniture, FurniturePhoto, Subcategory, User
 
 # Эти варианты должны быть доступны до появления соответствующих товаров.
 REQUIRED_COUNTRIES = ("Россия", "Турция")
 REQUIRED_KITCHEN_TYPES = ("Прямая", "Угловая")
+
+# Синтаксическое имя раздела «Остальные»: товары категории без подкатегории —
+# они не имеют активной метки (подкатегория не указана или была удалена).
+OTHERS_SUBCATEGORY = "__others__"
+
+
+async def _get_subcategory_rows(category_id: int) -> list[Subcategory]:
+    """Все записи подкатегорий категории."""
+    async with engine.AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Subcategory)
+            .where(Subcategory.category_id == category_id)
+            .order_by(Subcategory.name)
+        )
+        return list(result.scalars().all())
+
+
+async def get_active_subcategory_names(category_id: int) -> list[str]:
+    """Имена подкатегорий категории для меню покупателя."""
+    rows = await _get_subcategory_rows(category_id)
+    return [row.name for row in rows]
+
+
+async def _get_category_id(category_name: str) -> int | None:
+    """Идентификатор категории по имени (для внутренних связок)."""
+    async with engine.AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Category.id).where(Category.name == category_name)
+        )
+        return result.scalar_one_or_none()
+
+
+def _others_condition():
+    """Условие фильтра для раздела «Остальные»: товары без подкатегории."""
+    return Furniture.subcategory.is_(None)
 
 
 async def upsert_user(
@@ -69,19 +104,20 @@ async def get_furniture_list(
     subcategory: str | None = None,
 ) -> list[Furniture]:
     """Вернуть товары категории с необязательной фильтрацией."""
-    # Фотографии загружаются сразу, чтобы карточку можно было показать одной операцией.
+    filters = [Furniture.category_name == category_name]
+    if country is not None:
+        filters.append(Furniture.country == country)
+    if subcategory == OTHERS_SUBCATEGORY:
+        filters.append(_others_condition())
+    elif subcategory is not None:
+        filters.append(Furniture.subcategory == subcategory)
+
     query = (
         select(Furniture)
         .options(selectinload(Furniture.photos))
-        .where(Furniture.category_name == category_name)
+        .where(*filters)
         .order_by(Furniture.id)
     )
-
-    # Фильтры добавляются только для выбранного пользователем режима.
-    if country is not None:
-        query = query.where(Furniture.country == country)
-    if subcategory is not None:
-        query = query.where(Furniture.subcategory == subcategory)
 
     async with engine.AsyncSessionLocal() as session:
         result = await session.execute(query)
@@ -99,7 +135,9 @@ async def get_furniture_page(
     filters = [Furniture.category_name == category_name]
     if country is not None:
         filters.append(Furniture.country == country)
-    if subcategory is not None:
+    if subcategory == OTHERS_SUBCATEGORY:
+        filters.append(_others_condition())
+    elif subcategory is not None:
         filters.append(Furniture.subcategory == subcategory)
 
     offset = max(page, 0) * page_size
@@ -120,43 +158,50 @@ async def get_furniture_page(
 
 
 async def get_filter_values(category_name: str, filter_type: str) -> list[str]:
-    """Вернуть уникальные значения фильтра, сохранённые у товаров категории."""
-    # Выбираем колонку фильтра динамически, но только из разрешённых полей модели.
-    column = (
-        Furniture.country
-        if filter_type == "country"
-        else Furniture.subcategory
-    )
-    query = (
-        select(column)
-        .where(Furniture.category_name == category_name, column.is_not(None))
-        .distinct()
-        .order_by(column)
-    )
+    """Вернуть варианты фильтра категории.
 
+    Для подкатегорий берём активные записи таблицы subcategories, для стран —
+    уникальные значения у товаров плюс гарантированные варианты.
+    """
+    if filter_type == "subcategory":
+        category_id = await _get_category_id(category_name)
+        if category_id is None:
+            return []
+        values = await get_active_subcategory_names(category_id)
+        if category_name == "Кухонная мебель":
+            values.extend(
+                kitchen_type
+                for kitchen_type in REQUIRED_KITCHEN_TYPES
+                if kitchen_type not in values
+            )
+        return sorted(values)
+
+    # filter_type == "country": уникальные страны у товаров + гарантированные.
+    query = (
+        select(Furniture.country)
+        .where(
+            Furniture.category_name == category_name,
+            Furniture.country.is_not(None),
+        )
+        .distinct()
+        .order_by(Furniture.country)
+    )
     async with engine.AsyncSessionLocal() as session:
         result = await session.execute(query)
         values = [str(value) for value in result.scalars().all()]
-
-    if filter_type == "country":
-        values.extend(country for country in REQUIRED_COUNTRIES if country not in values)
-    elif filter_type == "subcategory" and category_name == "Кухонная мебель":
-        values.extend(
-            kitchen_type
-            for kitchen_type in REQUIRED_KITCHEN_TYPES
-            if kitchen_type not in values
-        )
-
+    values.extend(country for country in REQUIRED_COUNTRIES if country not in values)
     return sorted(values)
 
 
 async def get_country_values(
     category_name: str, subcategory: str | None = None
 ) -> list[str]:
-    """Вернуть страны каталога, доступные товарам категории.
+    """Вернуть страны, доступные товарам категории.
 
-    При переданной подкатегории список сужается до стран, у которых в этой
-    подкатегории есть товары, — пустой выбор исключается (ADR/UX 2026).
+    При переданной активной подкатегории список сужается до стран, у которых
+    в этой подкатегории есть товары. Для раздела «Остальные» — к товарам
+    удалённых или неназванных подкатегорий. Гарантированные страны
+    (Россия/Турция) добавляются всегда: страна выбирается для каждой категории.
     """
     query = (
         select(Furniture.country)
@@ -167,18 +212,16 @@ async def get_country_values(
         .distinct()
         .order_by(Furniture.country)
     )
-    if subcategory is not None:
+    if subcategory == OTHERS_SUBCATEGORY:
+        query = query.where(_others_condition())
+    elif subcategory is not None:
         query = query.where(Furniture.subcategory == subcategory)
 
     async with engine.AsyncSessionLocal() as session:
         result = await session.execute(query)
         values = [str(value) for value in result.scalars().all()]
 
-    # Гарантированные страны добавляем только для всего каталога категории;
-    # для суженного подкатегорией списка это создало бы «пустые» варианты.
-    if subcategory is None:
-        values.extend(country for country in REQUIRED_COUNTRIES if country not in values)
-
+    values.extend(country for country in REQUIRED_COUNTRIES if country not in values)
     return sorted(values)
 
 
@@ -306,8 +349,17 @@ async def delete_furniture(furniture_id: int) -> bool:
         return True
 
 
-async def get_subcategories_with_counts(category_name: str) -> list[tuple[str, int]]:
-    """Вернуть подкатегории категории с числом занимаемых товаров."""
+async def get_subcategories_with_counts(category_name: str) -> list[tuple[int, str, int]]:
+    """Вернуть подкатегории категории: (id, имя, счётчик товаров).
+
+    Список строится по таблице subcategories, к которому добавляются метки,
+    встречающиеся у товаров, но ещё не внесённые в таблицу (legacy-данные).
+    """
+    category_id = await _get_category_id(category_name)
+    if category_id is None:
+        return []
+    rows = await _get_subcategory_rows(category_id)
+
     query = (
         select(Furniture.subcategory, func.count(Furniture.id))
         .where(
@@ -315,11 +367,94 @@ async def get_subcategories_with_counts(category_name: str) -> list[tuple[str, i
             Furniture.subcategory.is_not(None),
         )
         .group_by(Furniture.subcategory)
-        .order_by(Furniture.subcategory)
     )
     async with engine.AsyncSessionLocal() as session:
         result = await session.execute(query)
-        return [(str(value), int(count)) for value, count in result.all()]
+        counts = {str(value): int(count) for value, count in result.all()}
+
+    items = [
+        (row.id, row.name, counts.get(row.name, 0))
+        for row in rows
+    ]
+    # Метки у товаров, которых ещё нет в таблице, добавляем.
+    existing = {name for _, name, _ in items}
+    for name, count in counts.items():
+        if name not in existing:
+            items.append((0, name, count))
+    return sorted(items, key=lambda item: item[1])
+
+
+async def get_others_count(category_name: str) -> int:
+    """Сколько товаров попадёт в раздел «Остальные» категории.
+
+    «Остальные» — товары категории без подкатегории. Раздел показывается
+    только там, где есть записи подкатегорий (он дополняет их): у категории
+    без подкатегорий все товары видны по стране напрямую.
+    """
+    category_id = await _get_category_id(category_name)
+    if category_id is None:
+        return 0
+    rows = await _get_subcategory_rows(category_id)
+    if not rows:
+        return 0
+    async with engine.AsyncSessionLocal() as session:
+        count_query = (
+            select(func.count())
+            .select_from(Furniture)
+            .where(
+                Furniture.category_name == category_name,
+                _others_condition(),
+            )
+        )
+        return int(await session.scalar(count_query) or 0)
+
+
+async def create_subcategory(category_id: int, name: str) -> Subcategory:
+    """Создать подкатегорию; при существующей — вернуть её (уникальна по категории)."""
+    async with engine.AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Subcategory).where(
+                Subcategory.category_id == category_id,
+                Subcategory.name == name,
+            )
+        )
+        subcategory = result.scalar_one_or_none()
+        if subcategory is None:
+            subcategory = Subcategory(category_id=category_id, name=name)
+            session.add(subcategory)
+            await session.commit()
+            await session.refresh(subcategory)
+        return subcategory
+
+
+async def get_subcategory_by_id(subcategory_id: int) -> Subcategory | None:
+    """Найти подкатегорию по идентификатору."""
+    async with engine.AsyncSessionLocal() as session:
+        return await session.get(Subcategory, subcategory_id)
+
+
+async def delete_subcategory(subcategory_id: int) -> int:
+    """Полностью удалить подкатегорию и перенести её товары в «Остальные».
+
+    Метка у товаров подкатегории стирается (уходят в раздел «Остальные»),
+    сама запись удаляется целиком. Возвращает число перенесённых товаров.
+    """
+    async with engine.AsyncSessionLocal() as session:
+        subcategory = await session.get(Subcategory, subcategory_id)
+        if subcategory is None:
+            return 0
+        result = await session.execute(
+            update(Furniture)
+            .where(
+                Furniture.category_id == subcategory.category_id,
+                Furniture.subcategory == subcategory.name,
+            )
+            .values(subcategory=None)
+        )
+        count = int(getattr(result, "rowcount", 0))
+        await session.delete(subcategory)
+        await session.commit()
+        return count
 
 
 async def clear_subcategory(category_name: str, value: str) -> int:

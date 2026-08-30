@@ -7,6 +7,10 @@ class NewCategoryStates(StatesGroup):
     name_category = State()
     description_category = State()
 
+# Класс для состояний при добавлении НОВОЙ ПОДКАТЕГОРИИ
+class NewSubcategoryStates(StatesGroup):
+    name_subcategory = State()
+
 # Класс для состояний при добавлении НОВОЙ МЕБЕЛИ
 class NewFurnitureStates(StatesGroup):
     name = State()

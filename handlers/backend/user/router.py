@@ -1,13 +1,17 @@
 from aiogram import F, Router
 from aiogram.filters import CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InputMediaPhoto, MediaUnion, Message
 
 from database.crud import (
+    OTHERS_SUBCATEGORY,
+    get_active_subcategory_names,
     get_categories,
     get_category_by_id,
+    get_category_by_name,
     get_country_values,
-    get_filter_values,
     get_furniture_by_id,
+    get_others_count,
     upsert_user,
 )
 from keyboard.user_keyboards import (
@@ -15,18 +19,21 @@ from keyboard.user_keyboards import (
     country_menu,
     main_menu,
     product_menu,
-    subcategory_menu,
 )
 
 from .formatters import build_product_card
 from .texts import START_TEXT
-from .views import show_products
+from .views import show_products, show_subcategory_step
 
 router = Router(name="user_catalog")
 
 
 @router.message(CommandStart())
-async def start_handler(message: Message) -> None:
+async def start_handler(message: Message, state: FSMContext) -> None:
+    # /start всегда открывает каталог для всех. Сбрасываем незавершённые
+    # сценарии (например, прерванное админское добавление), иначе их текст
+    # перехватывается админским FSM и обычный пользователь блокируется.
+    await state.clear()
     # Сохраняем посетителя для админки; флаг is_admin при этом не трогаем.
     if message.from_user is not None:
         await upsert_user(
@@ -38,45 +45,69 @@ async def start_handler(message: Message) -> None:
     await message.answer(START_TEXT, reply_markup=main_menu(await get_categories()))
 
 
-@router.callback_query(F.data.startswith("category:"))
-async def category_handler(callback: CallbackQuery) -> None:
+async def _category_context(callback: CallbackQuery) -> tuple[object, str, str] | None:
+    """Вернуть (category, category_key, category_name) или None при ошибке."""
     if not isinstance(callback.message, Message) or callback.data is None:
-        return
-
+        return None
     category_id = int(callback.data.split(":", 1)[1])
     category = await get_category_by_id(category_id)
     if category is None:
         await callback.answer("Категория не найдена", show_alert=True)
-        return
-
+        return None
     category_name = str(category.name)
     category_key = next(
         (key for key, (name, _) in CATEGORY_CONFIG.items() if name == category_name),
         category_name,
     )
+    return category, category_key, category_name
 
-    # Шаг 1: подкатегории — показываем только если они реально есть у товаров.
-    subcategories = await get_filter_values(category_name, "subcategory")
-    if subcategories:
-        await callback.message.edit_text(
-            f"{category_name}\n\nВыберите подкатегорию из каталога:",
-            reply_markup=subcategory_menu(category_key, subcategories),
+
+@router.callback_query(F.data.startswith("category:"))
+async def category_handler(callback: CallbackQuery) -> None:
+    if not isinstance(callback.message, Message) or callback.data is None:
+        return
+
+    context = await _category_context(callback)
+    if context is None:
+        return
+    category, category_key, category_name = context
+
+    # Шаг 1: подкатегории (активные) и «Остальные». Если их нет — сразу страна.
+    subcategories = await get_active_subcategory_names(category.id)
+    others_count = await get_others_count(category_name)
+    if subcategories or others_count:
+        await show_subcategory_step(
+            callback, category_key, category_name, subcategories, others_count
         )
         await callback.answer()
         return
 
-    # Шаг 2: страна. Обязательный шаг, если у категории есть товары со странами.
+    # Шаг 2: страна. Выбор страны обязателен для каждой категории.
     countries = await get_country_values(category_name)
-    if countries:
-        await callback.message.edit_text(
-            f"{category_name}\n\nВыберите страну производства из каталога:",
-            reply_markup=country_menu(category_key, countries),
-        )
-        await callback.answer()
+    await callback.message.edit_text(
+        f"{category_name}\n\nВыберите страну производства из каталога:",
+        reply_markup=country_menu(category_key, countries),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("back:sub:"))
+async def back_to_subcategory_handler(callback: CallbackQuery) -> None:
+    if not isinstance(callback.message, Message) or callback.data is None:
         return
 
-    # Нет ни подкатегорий, ни стран — сразу показываем товары.
-    await show_products(callback, category_key)
+    category_key = callback.data.split(":", 2)[2]
+    category_name, _ = CATEGORY_CONFIG.get(category_key, (category_key, None))
+    category = await get_category_by_name(category_name)
+    if category is None:
+        await callback.answer("Категория не найдена", show_alert=True)
+        return
+
+    subcategories = await get_active_subcategory_names(category.id)
+    others_count = await get_others_count(category_name)
+    await show_subcategory_step(
+        callback, category_key, category_name, subcategories, others_count
+    )
     await callback.answer()
 
 
@@ -90,15 +121,11 @@ async def subcategory_handler(callback: CallbackQuery) -> None:
     _, category_key, subcategory = callback.data.split(":", 2)
     category_name, _ = CATEGORY_CONFIG.get(category_key, (category_key, None))
     countries = await get_country_values(category_name, subcategory)
-    if countries:
-        await callback.message.edit_text(
-            f"{category_name}\n\nВыберите страну производства из каталога:",
-            reply_markup=country_menu(category_key, countries, subcategory),
-        )
-        return
-
-    # В выбранной подкатегории стран нет — показываем её товары напрямую.
-    await show_products(callback, category_key, subcategory=subcategory)
+    label = "Остальное" if subcategory == OTHERS_SUBCATEGORY else subcategory
+    await callback.message.edit_text(
+        f"{category_name} · {label}\n\nВыберите страну производства из каталога:",
+        reply_markup=country_menu(category_key, countries, subcategory),
+    )
 
 
 @router.callback_query(F.data.startswith("country:"))

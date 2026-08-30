@@ -107,6 +107,7 @@ class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
             ),
             answer=AsyncMock(),
         )
+        state = AsyncMock()
 
         with (
             patch(
@@ -118,8 +119,9 @@ class StartHandlerTests(unittest.IsolatedAsyncioTestCase):
             patch("handlers.backend.user.router.main_menu", return_value="menu"),
         ):
             categories.return_value = []
-            await start_handler(message)
+            await start_handler(message, state)
 
+        state.clear.assert_awaited_once()
         upsert.assert_awaited_once_with(
             telegram_id=4242,
             username="visitor",

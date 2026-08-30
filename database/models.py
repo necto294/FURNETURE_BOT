@@ -43,6 +43,21 @@ class Category(Base):
         return f"<Category(id={self.id}, name='{self.name}')>"
 
 
+# Подкатегория категории. Товар ссылается на неё по имени через
+# Furniture.subcategory. Удаление удаляет запись целиком, а метка у товаров
+# стирается — они уходят в раздел «Остальные».
+class Subcategory(Base):
+    __tablename__ = "subcategories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    def __repr__(self):
+        return f"<Subcategory(id={self.id}, name='{self.name}')>"
+
+
 # Контракт каталога для админ-панели: пользовательская часть читает эти поля как есть.
 # category_name — точное имя из categories.name (например «Кухонная мебель»).
 # country — «Россия» или «Турция»; subcategory для кухни — «Прямая» или «Угловая».

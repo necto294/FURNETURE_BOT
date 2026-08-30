@@ -12,9 +12,10 @@ from aiogram.types import CallbackQuery, Message
 
 from database.crud import (
     create_furniture_with_photos,
+    create_subcategory,
+    get_active_subcategory_names,
     get_categories_with_counts,
     get_category_by_id,
-    get_filter_values,
 )
 from handlers.backend.user.formatters import format_price
 from keyboard.admin_keyboards import (
@@ -29,7 +30,6 @@ from utils.phone import normalize_phone
 
 from .router import (
     _category_key,
-    _filter_type,
 )
 
 router = Router(name="admin_furniture")
@@ -52,6 +52,14 @@ async def _ask_whatsapp(target: Message, state: FSMContext) -> None:
     await target.answer(
         "📱 Введите номер WhatsApp для карточки этого товара\n"
         "(например <code>+7 900 123 45 67</code>; <code>-</code> — пропустить):",
+    )
+
+
+async def _ask_country(target: Message, state: FSMContext) -> None:
+    await state.set_state(NewFurnitureStates.country)
+    await target.answer(
+        "🌍 Выберите страну производства:",
+        reply_markup=countries_menu(),
     )
 
 
@@ -112,29 +120,27 @@ async def add_furniture_category(callback: CallbackQuery, state: FSMContext) -> 
         return
 
     category_name = str(category.name)
-    filter_type = _filter_type(category_name)
     await state.update_data(
         category_id=category.id,
         category_name=category_name,
         category_key=_category_key(category_name),
     )
 
-    if filter_type == "subcategory":
-        types = await get_filter_values(category_name, "subcategory")
+    # Шаг «подкатегория» появляется, если у категории есть активные
+    # подкатегории; затем всегда следует шаг выбора страны.
+    subcategories = await get_active_subcategory_names(category.id)
+    if subcategories:
         await state.set_state(NewFurnitureStates.kitchen_type)
         await callback.message.edit_text(
-            "📐 Выберите тип кухни или отправьте свой вариант текстом:",
-            reply_markup=kitchen_types_menu(types),
+            "📐 Выберите подкатегорию или отправьте свой вариант текстом:",
+            reply_markup=kitchen_types_menu(subcategories),
         )
-    elif filter_type == "country":
+    else:
         await state.set_state(NewFurnitureStates.country)
         await callback.message.edit_text(
             "🌍 Выберите страну производства:",
             reply_markup=countries_menu(),
         )
-    else:
-        await callback.message.delete()
-        await _ask_whatsapp(callback.message, state)
     await callback.answer()
 
 
@@ -145,20 +151,24 @@ async def add_furniture_kitchen_type(callback: CallbackQuery, state: FSMContext)
 
     value = callback.data.split(":", 2)[2]
     await state.update_data(subcategory=value)
-    await _ask_whatsapp(callback.message, state)
+    await _ask_country(callback.message, state)
     await callback.answer()
 
 
 @router.message(StateFilter(NewFurnitureStates.kitchen_type), F.text)
 async def add_furniture_kitchen_custom(message: Message, state: FSMContext) -> None:
-    # Свой вариант подкатегории появится в фильтрах автоматически.
+    # Свой вариант подкатегории регистрируем в таблице — он появится
+    # в меню покупателя и в списках подкатегорий.
     value = message.text.strip()
     if not value:
         await message.answer("Тип не может быть пустым. Попробуйте ещё раз:")
         return
 
+    data = await state.get_data()
+    if "category_id" in data:
+        await create_subcategory(int(data["category_id"]), value)
     await state.update_data(subcategory=value)
-    await _ask_whatsapp(message, state)
+    await _ask_country(message, state)
 
 
 @router.callback_query(StateFilter(NewFurnitureStates.country), F.data.startswith("adm:country:"))
