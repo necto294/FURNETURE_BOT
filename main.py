@@ -94,8 +94,10 @@ async def main() -> None:
     logger.info("Администраторы из ADMIN_ID: %s", ConfigBot.ADMIN_IDS or "не заданы")
     dispatcher = Dispatcher()
     # Каталог, заявки и админ-панель — роутеры одного диспетчера.
-    dispatcher.include_router(admin_router)
+    # Каталог идёт первым: /start обрабатывается им для всех пользователей и
+    # не перехватывается незавершёнными админскими FSM-сценариями.
     dispatcher.include_router(user_router)
+    dispatcher.include_router(admin_router)
     dispatcher.include_router(order_router)
 
     # Регистрируем команды, чтобы /start и /admin были видны в меню Telegram.

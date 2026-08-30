@@ -2,15 +2,39 @@ from html import escape
 
 from aiogram.types import CallbackQuery, Message
 
-from database.crud import get_furniture_page
+from database.crud import OTHERS_SUBCATEGORY, get_furniture_page
 from keyboard.user_keyboards import (
     CATEGORY_CONFIG,
     CATEGORY_ICONS,
     empty_catalog_menu,
     products_menu,
+    subcategory_menu,
 )
 
 from .texts import HTML_SEPARATOR
+
+
+async def show_subcategory_step(
+    callback: CallbackQuery,
+    category_key: str,
+    category_name: str,
+    subcategories: list[str],
+    others_count: int,
+) -> None:
+    """Показать шаг выбора подкатегории (+ кнопку «Остальные»)."""
+    if not isinstance(callback.message, Message):
+        return
+
+    category_icon = CATEGORY_ICONS.get(category_key, "🪑")
+    text = (
+        f"{category_icon} <b>{escape(category_name)}</b>\n"
+        f"{HTML_SEPARATOR}\n\n"
+        "Выберите подкатегорию:"
+    )
+    await callback.message.edit_text(
+        text,
+        reply_markup=subcategory_menu(category_key, subcategories, others_count),
+    )
 
 
 async def show_products(
@@ -33,8 +57,9 @@ async def show_products(
 
     if products:
         # Показываем число найденных товаров перед списком кнопок.
+        context = " · Остальные" if subcategory == OTHERS_SUBCATEGORY else ""
         text = (
-            f"<b>{category_name}</b>\n\n"
+            f"<b>{category_name}</b>{escape(context)}\n\n"
             f"Показано {len(products)} из {total} товаров в категории.\n\n"
             "Выберите товар:"
         )

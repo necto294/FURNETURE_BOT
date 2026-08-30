@@ -63,7 +63,7 @@ class AdminCrudTests(helpers.TempDbMixin, unittest.IsolatedAsyncioTestCase):
             )
 
         items = await crud.get_subcategories_with_counts(str(category.name))
-        self.assertEqual(items, [("Прямая", 2)])
+        self.assertEqual(items, [(0, "Прямая", 2)])
 
         updated = await crud.clear_subcategory(str(category.name), "Прямая")
         self.assertEqual(updated, 2)

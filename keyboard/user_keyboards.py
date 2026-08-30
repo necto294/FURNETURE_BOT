@@ -1,5 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from database.crud import OTHERS_SUBCATEGORY
+
 # Для каждой категории указываем нужный дополнительный фильтр.
 CATEGORY_CONFIG = {
     "sleep": ("Спальная мебель", "country"),
@@ -64,8 +66,16 @@ def empty_catalog_menu() -> InlineKeyboardMarkup:
     )
 
 
-def subcategory_menu(category_key: str, values: list[str]) -> InlineKeyboardMarkup:
-    """Выбор подкатегории: после него открывается шаг страны."""
+def subcategory_menu(
+    category_key: str,
+    values: list[str],
+    others_count: int = 0,
+) -> InlineKeyboardMarkup:
+    """Выбор подкатегории: после него открывается шаг страны.
+
+    Список строится по активным подкатегориям; при наличии товаров
+    удалённых подкатегорий добавляется кнопка «Остальные».
+    """
     rows = []
     for value in values:
         rows.append(
@@ -73,6 +83,15 @@ def subcategory_menu(category_key: str, values: list[str]) -> InlineKeyboardMark
                 InlineKeyboardButton(
                     text=f"📐 {value}",
                     callback_data=f"filtersub:{category_key}:{value}",
+                )
+            ]
+        )
+    if others_count:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"🗂 Остальные ({others_count})",
+                    callback_data=f"filtersub:{category_key}:{OTHERS_SUBCATEGORY}",
                 )
             ]
         )
@@ -97,7 +116,9 @@ def country_menu(
                 )
             ]
         )
-    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back:main")])
+    # Назад возвращает на шаг подкатегории, если он был, иначе в каталог.
+    back_data = f"back:sub:{category_key}" if subcategory else "back:main"
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data=back_data)])
     return _keyboard(rows)
 
 

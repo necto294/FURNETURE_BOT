@@ -26,8 +26,10 @@
 - Глобальный `ParseMode.HTML`: экранируй пользовательский ввод через
   `html.escape`.
 - **Миграции не редактировать после применения** — новая схема = новая ревизия.
-  Актуальная цепочка: единственная начальная ревизия `d86de4abbf3e` (вся
-  схема из `models.py` + сид категорий; ADR 0004).
+  Актуальная цепочка: начальная `d86de4abbf3e` (вся схема из `models.py` +
+  сид категорий; ADR 0004) → `9c6920cb0ae6` (таблица `subcategories` +
+  сид кухонных типов) → `9e046db1dbeb` (полное удаление подкатегорий:
+  drop `is_deleted`, legacy-удалённые перенесены в «Остальные»).
 - **БД — SQLite-файл** из `DATABASE_PATH` в `.env` (`settings/config.py`):
   async-URL (`sqlite+aiosqlite://`) для бота, sync-URL (`sqlite://`) для
   Alembic (`ConfigBot.SYNC_DATABASE_URL`; aiosqlite не годится для sync-
@@ -40,25 +42,30 @@
 
 ## Архитектура
 
-- Роутеры в `main.py` (порядок важен): `handlers/admin` (сборка в
-  `__init__.py`: меню в `router.py`, потоки в `categories.py` /
-  `furniture.py` (добавление) / `furniture_delete.py` (удаление) /
-  `subcategories.py` / `orders.py`; доступ — один middleware
+- Роутеры в `main.py` (порядок важен; каталог идёт ПЕРВЫМ, чтобы `/start`
+  всегда обрабатывался для всех и не перехватывался незавершёнными админскими
+  FSM-сценариями — `start_handler` сбрасывает state):
+  `handlers/backend/user/router.py` (каталог),
+  `handlers/admin` (сборка в `__init__.py`: меню в `router.py`, потоки в
+  `categories.py` / `furniture.py` (добавление) / `furniture_delete.py`
+  (удаление) / `subcategories.py` / `orders.py`; доступ — один middleware
   `access.setup_admin_access` на родительском роутере, хендлеры прав НЕ
   проверяют),
-  `handlers/backend/user/router.py` (каталог),
   `handlers/backend/order.py` (FSM-заявка: имя → телефон → подтверждение).
 - Fallback «отправьте текстом» для админских FSM живёт ВНУТРИ своего модуля
   (`categories.py`, `furniture.py`) и регистрируется после текстовых
   хендлеров этого модуля.
-- Навигация на строках callback_data: `category:<id>`,
-  `filter:<key>:<тип>:<значение>`, `page:<key>:<стр>:<тип>:<значение>`,
-  `product:<id>:<key>:<тип>:<значение>:<стр>`, `order:<id>`,
-  `order:confirm|cancel`, `back:main`. Контекст возврата зашит в кнопки.
+- Навигация на строках callback_data: `category:<id>` →
+  `filtersub:<key>:<подкатегория|__others__>` → `country:<key>:<подкатегория>:<страна>`
+  → `page:<key>:<стр>:<подкатегория>:<страна>` → `product:<id>:<key>:<подкатегория>:<страна>:<стр>`,
+  возврат `back:sub:<key>` / `back:main`, заявка `order:<id>` / `order:confirm|cancel`.
+  Контекст возврата зашит в кнопки. Подкатегория в этих данных — имя активной
+  подкатегории либо синтаксическое `__others__` (раздел «Остальные»;
+  `database/crud_catalog.OTHERS_SUBCATEGORY`).
   Админские колбэки — префикс `adm:`: меню `adm:menu`, категории
   `adm:delcat[:ok]:<id>`, товары `adm:delfurn[:<id>][:<стр>]` /
   `adm:delp|delok:<pid>:<cid>:<стр>`, подкатегории `adm:subcat:<id>` /
-  `adm:scdel[ok]:<cid>:<поз>`, заявки `adm:orders[:стр]` /
+  `adm:scadd:<cid>` (FSM-имя) / `adm:scdel[ok]:<sid>`, заявки `adm:orders[:стр]` /
   `adm:order:<id>:<стр>` / `adm:ost:<id>:<статус>:<стр>`; статистика заявок
   `adm:ostats` (без двоеточия после ost — не путать с `adm:ost:`), экспорт
   CSV `adm:oexport`.
@@ -66,10 +73,17 @@
   в рантайме (см. историю с `adm:delfurn` без страницы).
 - `CATEGORY_CONFIG` (`keyboard/user_keyboards.py`): короткий ключ категории →
   (имя из БД, тип фильтра). Категория без ключа работает: имя = ключ.
-- Фильтры динамические — уникальные значения колонок `country`/`subcategory`;
-  подкатегорий как таблицы НЕТ. `REQUIRED_COUNTRIES` / `REQUIRED_KITCHEN_TYPES`
-  в `database/crud.py` гарантируют варианты фильтра даже при пустой базе;
-  админский раздел «Подкатегории» для кухни показывает эти же типы со счётчиком 0.
+- **Подкатегории — отдельная таблица `subcategories`** (`models.Subcategory`,
+  миграция `9c6920cb0ae6`): `category_id`, `name`, `created_at` (`is_deleted`
+  убран миграцией `9e046db1dbeb`). Товар ссылается на неё по имени через
+  `furniture.subcategory`. Удаление (`delete_subcategory`) стирает метку у
+  товаров подкатегории (они уходят в раздел «Остальные», `подкатегория=__others__`)
+  и полностью удаляет запись. «Остальные» показываются только если у категории
+  есть записи подкатегорий (тогда это дополнение к ним); у категории без
+  подкатегорий все товары видны по стране напрямую. `get_subcategories_with_counts`
+  объединяет таблицу с метками товаров (легаси), возвращает
+  `(id, имя, счётчик)`. `REQUIRED_KITCHEN_TYPES` гарантируют
+  «Прямая»/«Угловая» для кухни в сид миграции.
 - Фото — в `furniture_photos` по Telegram `file_id`, отправка альбомом через
   `answer_media_group`.
 - Админ — telegram_id из `ADMIN_ID` в `.env` (список через запятую,

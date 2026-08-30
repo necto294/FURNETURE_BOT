@@ -78,25 +78,31 @@ def kitchen_types_menu(types: list[str]) -> InlineKeyboardMarkup:
 
 
 def subcategories_menu(
-    items: list[tuple[str, int]],
+    items: list[tuple[int, str, int]],
     category_id: int,
 ) -> InlineKeyboardMarkup:
-    """Список подкатегорий категории для удаления."""
+    """Список подкатегорий категории: удаление и добавление.
+
+    items — кортежи (id, имя, счётчик товаров).
+    """
     rows = [
         [
             InlineKeyboardButton(
                 text=f"{value} ({count})",
-                callback_data=f"adm:scdel:{category_id}:{position}",
+                callback_data=f"adm:scdel:{subcategory_id}",
             )
         ]
-        for position, (value, count) in enumerate(items)
+        for subcategory_id, value, count in items
     ]
-    if not rows:
-        # Подкатегория появляется автоматически, когда товару вводят новый тип.
-        rows.append(
-            [InlineKeyboardButton(text="➕ Новая при добавлении товара", callback_data="adm:noop")]
-        )
-    rows.append([_cancel_button("◀️ Выбрать другую категорию")])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                text="➕ Добавить подкатегорию",
+                callback_data=f"adm:scadd:{category_id}",
+            )
+        ]
+    )
+    rows.append([_cancel_button("◀️ Назад к категориям")])
     return _keyboard(rows)
 
 
