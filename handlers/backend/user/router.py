@@ -1,4 +1,5 @@
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InputMediaPhoto, MediaUnion, Message
@@ -139,11 +140,24 @@ async def country_handler(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("page:"))
-async def page_handler(callback: CallbackQuery) -> None:
+async def page_handler(callback: CallbackQuery, state: FSMContext) -> None:
     if callback.data is None:
         return
 
     await callback.answer()
+    data = await state.get_data()
+    photo_ids = data.get("product_photo_msg_ids") or []
+    card_id = data.get("product_card_msg_id") or 0
+
+    # Возврат из карточки («к списку товаров»): убираем фото и карточку, список
+    # остался в чате и не пересоздаётся — дублей не появляется.
+    if card_id:
+        await _delete_album_messages(callback, photo_ids)
+        await _delete_message(callback, card_id)
+        await state.update_data(product_photo_msg_ids=[], product_card_msg_id=0)
+        return
+
+    # Листание страниц списка: карточки нет, фото не удаляем.
     _, category_key, page, subcategory, country = callback.data.split(":", 4)
     await show_products(
         callback,
@@ -160,7 +174,7 @@ async def noop_handler(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("product:"))
-async def product_handler(callback: CallbackQuery) -> None:
+async def product_handler(callback: CallbackQuery, state: FSMContext) -> None:
     # Из callback_data восстанавливаем путь пользователя для кнопки возврата.
     if not isinstance(callback.message, Message) or callback.data is None:
         return
@@ -173,31 +187,84 @@ async def product_handler(callback: CallbackQuery) -> None:
         return
 
     details = build_product_card(product, category_key)
+    chat_id = callback.message.chat.id
+    reply = product_menu(
+        product.id,
+        category_key,
+        subcategory,
+        country,
+        int(page),
+    )
 
-    # Telegram принимает фотографии группой, поэтому отправляем их одним альбомом.
+    # Список товаров не редактируем и не удаляем — он остаётся в чате один.
+    # Поверх него шлём сначала альбом с фото, затем карточку, чтобы порядок в
+    # чате был «фото выше карточки». В state храним id списка, фото и карточки,
+    # чтобы при возврате удалить лишние сообщения и не копить мусор в чате.
+    photo_ids: list[int] = []
     if product.photos:
         media: list[MediaUnion] = [
             InputMediaPhoto(media=photo.file_id) for photo in product.photos
         ]
-        await callback.message.answer_media_group(media)
+        sent = await callback.bot.send_media_group(chat_id, media)
+        photo_ids = [int(message.message_id) for message in sent]
 
-    # Кнопка заявки в карточке получает id товара и контекст возврата.
-    await callback.message.answer(
-        details,
-        reply_markup=product_menu(
-            product.id,
-            category_key,
-            subcategory,
-            country,
-            int(page),
-        ),
+    card = await callback.bot.send_message(chat_id, details, reply_markup=reply)
+    await state.update_data(
+        product_list_msg_id=int(callback.message.message_id),
+        product_photo_msg_ids=photo_ids,
+        product_card_msg_id=int(card.message_id),
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == "back:main")
-async def back_to_main_handler(callback: CallbackQuery) -> None:
+async def _delete_album_messages(callback: CallbackQuery, message_ids: list[int]) -> None:
+    """Удалить сообщения с фотоальбомом карточки (без падения при повторе)."""
+    if not message_ids or not isinstance(callback.message, Message):
+        return
+    chat_id = callback.message.chat.id
+    for message_id in message_ids:
+        try:
+            await callback.bot.delete_message(chat_id, message_id)
+        except TelegramBadRequest:
+            pass
+
+
+async def _delete_message(callback: CallbackQuery, message_id: int) -> None:
+    """Удалить одно сообщение (карточку) без падения при повторе."""
+    if not message_id or not isinstance(callback.message, Message):
+        return
+    chat_id = callback.message.chat.id
+    try:
+        await callback.bot.delete_message(chat_id, message_id)
+    except TelegramBadRequest:
+        pass
+
+
+@router.callback_query(F.data.startswith("back:main"))
+async def back_to_main_handler(callback: CallbackQuery, state: FSMContext) -> None:
     if not isinstance(callback.message, Message):
+        return
+
+    # Возврат в меню: если открыта карточка — убрать фото, карточку и список,
+    # чтобы чат не засорялся, и показать меню новым сообщением; иначе просто
+    # отредактировать список в меню.
+    data = await state.get_data()
+    photo_ids = data.get("product_photo_msg_ids") or []
+    card_id = data.get("product_card_msg_id") or 0
+    list_id = data.get("product_list_msg_id") or 0
+    if card_id:
+        await _delete_album_messages(callback, photo_ids)
+        await _delete_message(callback, card_id)
+        await _delete_message(callback, list_id)
+        await state.update_data(
+            product_list_msg_id=0,
+            product_photo_msg_ids=[],
+            product_card_msg_id=0,
+        )
+        await callback.message.answer(
+            START_TEXT, reply_markup=main_menu(await get_categories())
+        )
+        await callback.answer()
         return
 
     await callback.message.edit_text(

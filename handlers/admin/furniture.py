@@ -2,6 +2,7 @@
 
 Потоки удаления товара вынесены в furniture_delete.py.
 """
+import asyncio
 from html import escape
 
 from aiogram import F, Router
@@ -34,14 +35,23 @@ from .router import (
 
 router = Router(name="admin_furniture")
 
+# Максимум фотографий у товара. Превышение не принимается.
+MAX_FURNITURE_PHOTOS = 10
+
+# Кэш собираемых альбомов фото: media_group_id -> {task, message, photos}.
+# Позволяет принять весь альбом разом и ответить одним подтверждением.
+_ALBUM_TIMER_DELAY = 0.6
+_ALBUM_CACHE: dict[str, dict] = {}
+
 
 # --- Добавление товара ---
 
 async def _start_photos_step(target: Message, state: FSMContext) -> None:
     await state.set_state(NewFurnitureStates.photos)
     await target.answer(
-        "📸 Прикрепите фотографии товара.\n"
-        "Можно отправить несколько сообщений с фото.\n"
+        f"📸 Прикрепите фотографии товара.\n"
+        f"Можно отправить несколько фото за раз (до {MAX_FURNITURE_PHOTOS} всего, "
+        "одиночные фото и целыми альбомами).\n"
         "Когда закончите — нажмите «Готово, сохранить».",
         reply_markup=photos_menu(),
     )
@@ -247,27 +257,75 @@ async def add_furniture_price(message: Message, state: FSMContext) -> None:
 
 @router.message(StateFilter(NewFurnitureStates.photos), F.photo)
 async def add_furniture_photo(message: Message, state: FSMContext) -> None:
-    # Для показа в каталоге достаточно file_id, путь сохраняем на всякий случай.
+    """Принять одно фото или целый альбом (одним подтверждением, без спама)."""
     photo = message.photo[-1]
+    file_path = await _resolve_photo_path(message, photo.file_id)
+
+    media_group_id = getattr(message, "media_group_id", None)
+    if media_group_id:
+        # Часть альбома: копим и отвечаем один раз по завершении сбора.
+        entry = _ALBUM_CACHE.setdefault(
+            media_group_id,
+            {"task": None, "message": message, "photos": []},
+        )
+        entry["photos"].append((photo.file_id, file_path))
+        if entry["task"] is None:
+            entry["task"] = asyncio.create_task(_flush_album(media_group_id, state))
+    else:
+        # Одиночное фото вне альбома.
+        await _store_photos(message, state, [(photo.file_id, file_path)])
+
+
+async def _resolve_photo_path(message: Message, file_id: str) -> str:
+    """Получить путь файла фото в Telegram (не критично, если не удалось)."""
     file_path = None
     try:
-        file = await message.bot.get_file(photo.file_id)
+        file = await message.bot.get_file(file_id)
         file_path = file.file_path
     except TelegramBadRequest:
         file_path = ""
-    if file_path is None:
-        file_path = ""
+    return str(file_path or "")
 
+
+async def _flush_album(media_group_id: str, state: FSMContext) -> None:
+    """После короткой паузы обработать собранный альбом одним подтверждением."""
+    await asyncio.sleep(_ALBUM_TIMER_DELAY)
+    entry = _ALBUM_CACHE.pop(media_group_id, None)
+    if entry is None:
+        return
+    await _store_photos(entry["message"], state, entry["photos"])
+
+
+async def _store_photos(
+    message: Message, state: FSMContext, photo_items: list[tuple[str, str]]
+) -> None:
+    """Добавить фото в товар с учётом лимита и ответить сводкой."""
     data = await state.get_data()
     photos = list(data.get("photos", []))
-    photos.append((photo.file_id, str(file_path)))
+    room = MAX_FURNITURE_PHOTOS - len(photos)
+    added = photo_items[:room] if room > 0 else []
+    photos.extend(added)
     await state.update_data(photos=photos)
 
-    await message.answer(
-        f"✅ Фото добавлено ({len(photos)}). "
-        "Отправьте ещё или нажмите «Готово, сохранить».",
-        reply_markup=photos_menu(),
-    )
+    total = len(photos)
+    if not added:
+        await message.answer(
+            f"Фото не добавлены: достигнут лимит {MAX_FURNITURE_PHOTOS}. "
+            "Нажмите «Готово, сохранить».",
+            reply_markup=photos_menu(),
+        )
+    elif total >= MAX_FURNITURE_PHOTOS:
+        await message.answer(
+            f"✅ Добавлено фото: {len(added)} (всего {MAX_FURNITURE_PHOTOS}). "
+            "Лимит достигнут. Нажмите «Готово, сохранить».",
+            reply_markup=photos_menu(),
+        )
+    else:
+        await message.answer(
+            f"✅ Добавлено фото: {len(added)} (всего {total} из {MAX_FURNITURE_PHOTOS}). "
+            "Отправьте ещё или нажмите «Готово, сохранить».",
+            reply_markup=photos_menu(),
+        )
 
 
 @router.message(StateFilter(NewFurnitureStates.photos))
