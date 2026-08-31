@@ -169,5 +169,80 @@ class PriceStepTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(format_price(None), "не указана")
 
 
+class AddFurniturePhotoTests(unittest.IsolatedAsyncioTestCase):
+    """Одиночное фото, альбом одним подтверждением и лимит 10."""
+
+    def _photo_message(self, file_id: str = "f1", media_group_id: str | None = None):
+        photo = SimpleNamespace(file_id=file_id)
+        bot = SimpleNamespace(
+            get_file=AsyncMock(return_value=SimpleNamespace(file_path=f"photos/{file_id}.jpg"))
+        )
+        return SimpleNamespace(
+            photo=[photo],
+            bot=bot,
+            media_group_id=media_group_id,
+            answer=AsyncMock(),
+        )
+
+    async def test_single_photo_added_with_confirmation(self) -> None:
+        from handlers.admin.furniture import add_furniture_photo
+
+        message = self._photo_message("f1")
+        state = helpers.make_state()
+
+        await add_furniture_photo(message, state)
+
+        state.update_data.assert_awaited_once_with(
+            photos=[("f1", "photos/f1.jpg")]
+        )
+        text = message.answer.await_args.args[0]
+        self.assertIn("Добавлено фото: 1", text)
+        self.assertIn("из 10", text)
+
+    async def test_album_stores_all_photos_in_one_confirmation(self) -> None:
+        from handlers.admin.furniture import _store_photos
+
+        message = self._photo_message()
+        state = helpers.make_state()
+
+        items = [("f1", "p1.jpg"), ("f2", "p2.jpg"), ("f3", "p3.jpg")]
+        await _store_photos(message, state, items)
+
+        state.update_data.assert_awaited_once_with(photos=items)
+        text = message.answer.await_args.args[0]
+        self.assertIn("Добавлено фото: 3", text)
+
+    async def test_photo_limit_enforced(self) -> None:
+        from handlers.admin.furniture import _store_photos
+
+        message = self._photo_message()
+        state = helpers.make_state(
+            {"photos": [(f"x{i}", f"p{i}.jpg") for i in range(9)]}
+        )
+
+        # Шлём 3, но влезает только 1 (до лимита 10).
+        await _store_photos(message, state, [("a", "a.jpg"), ("b", "b.jpg"), ("c", "c.jpg")])
+
+        photos = state.update_data.await_args.kwargs["photos"]
+        self.assertEqual(len(photos), 10)
+        text = message.answer.await_args.args[0]
+        self.assertIn("Лимит достигнут", text)
+
+    async def test_photo_limit_reached_stops_accepting(self) -> None:
+        from handlers.admin.furniture import _store_photos
+
+        message = self._photo_message()
+        state = helpers.make_state(
+            {"photos": [(f"x{i}", f"p{i}.jpg") for i in range(10)]}
+        )
+
+        await _store_photos(message, state, [("a", "a.jpg")])
+
+        photos = state.update_data.await_args.kwargs["photos"]
+        self.assertEqual(len(photos), 10)
+        text = message.answer.await_args.args[0]
+        self.assertIn("не добавлены", text)
+
+
 if __name__ == "__main__":
     unittest.main()
